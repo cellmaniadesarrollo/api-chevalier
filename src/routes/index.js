@@ -9,4 +9,5 @@ routes.get("/datavideos", AppController.tdata);
 routes.get("/scrape-facebook", AppController.facebook);
 
 routes.post("/submit-feedback",recaptchaToken, AppController.sendemail);
+routes.post("/consulta-cortes",recaptchaToken, AppController.consultaCortes);
 module.exports = routes;

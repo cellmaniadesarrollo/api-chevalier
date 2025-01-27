@@ -62,4 +62,15 @@ AppController.sendemail = async (req, res) => {
   }
 
 }
+
+AppController.consultaCortes = async (req, res) => {
+  try { 
+    console.log(req.body);
+    res.sendStatus(200);
+  } catch (error) {
+    console.error(error); 
+    res.status(500).json({ success: false, error: error.message });
+  }
+
+}
 module.exports = AppController;
