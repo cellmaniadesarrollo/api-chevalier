@@ -174,13 +174,21 @@ SalesModels.save = async (data, user) => {
     // Guardar la venta en la base de datos
     const sale = await SalesModeldb.create(saleData);
 
-    if (!await functions.hasFreeCuts(data.cliente)) {
-      await functions.manageHaircutCounter(data.cliente)
-    } {
-      console.log('el cliente tiene cortes gratis disponibles')
-      await functions.applyDiscounts(data)
-    }
+    const consumidorFinal = await functions.isConsumidorFinal(data.cliente)
+    const corteGeneral = await functions.hasCorteGeneral(data.productosservcio)
+ 
+    if (!consumidorFinal && corteGeneral) {
+      const freeCuts = await functions.hasFreeCuts(data.cliente)
+      if (!freeCuts) {
 
+        await functions.manageHaircutCounter(data.cliente)
+      } {
+        console.log('el cliente tiene cortes gratis disponibles')
+        await functions.applyDiscounts(data)
+      }
+    } else {
+      console.log('es consumidor final o tiene corte general')
+    }
 
     // Devolver la venta creada
     return sale;

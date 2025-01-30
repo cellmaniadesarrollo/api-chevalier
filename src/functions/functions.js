@@ -90,8 +90,8 @@ functions.manageHaircutCounter=async (customerId , serviceName = "CORTE GENERAL"
         counter.counter += 1;
         console.log(`Contador incrementado: ${counter.counter}`);
     
-        // Si el contador llega a 6, reiniciar y actualizar el descuento
-        if (counter.counter === 6) {
+        // Si el contador llega a 5, reiniciar y actualizar el descuento
+        if (counter.counter >= 5) {
           counter.counter = 0; // Reiniciar el contador
           console.log('El contador alcanzó 6. Reiniciando a 0.');
     
@@ -281,6 +281,29 @@ functions.addClientToBirthdayDiscount=async (clientId)=>{
     console.log(`El cliente con ID ${clientId} fue agregado al descuento de cumpleaños.`);
   } catch (error) {
     console.error('Error al agregar el cliente al descuento de cumpleaños:', error);
+  }
+}
+functions.isConsumidorFinal=async (clienteId)=>{
+  try {
+    const cliente = await Client.findOne({  _id: clienteId,names: "CONSUMIDOR", lastNames: "FINAL" });
+    return !!cliente; // Retorna true si encuentra un cliente, false si no
+  } catch (error) {
+    console.error("Error al buscar cliente:", error);
+    return false;
+  }
+}
+
+functions.hasCorteGeneral=async ( productosservcio)=>{
+  try {
+    // Extraer los IDs de los productos del arreglo
+    const productIds = productosservcio.map(producto => producto._id); 
+    // Buscar si algún producto tiene el nombre "CORTE GENERAL"
+    const product = await Service.findOne({ _id: { $in: productIds }, name: "CORTE GENERAL" });
+ 
+    return !!product; // Retorna true si existe, false si no
+  } catch (error) {
+    console.error("Error al buscar productos:", error);
+    return false;
   }
 }
 module.exports = functions;

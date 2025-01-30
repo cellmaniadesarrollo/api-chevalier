@@ -5,10 +5,20 @@ const fs = require('fs');
 const path = require('path');
 const jwt = require('jsonwebtoken'); 
 const User= require("../db/users")
+
+
+// Middleware para verificar el token de reCAPTCHA
 permissions.recaptchaToken = async (req, res, next) => {
   try {
-    const projectID = "chevalier-proyec-1727896169741";
-    const recaptchaKey = "6Le83VUqAAAAAAdwGCtIGFF5QTEc82FNsFYWIbKt";
+    // const projectID = "chevalier-proyec-1727896169741";
+    // const recaptchaKey = "6Le83VUqAAAAAAdwGCtIGFF5QTEc82FNsFYWIbKt";
+    // const token = req.headers['recaptcha-token']; // Obteniendo el token desde los headers
+    // const recaptchaAction = "submit"//"action-name";
+
+    // Credenciales nuevas
+    console.log('Request body antes de middleware:', req.body)
+    const projectID = "cheva-448521";
+    const recaptchaKey = "6Lf_C78qAAAAABW1udsb9PmInY4f5e1TBw5C5Z8Y";
     const token = req.headers['recaptcha-token']; // Obteniendo el token desde los headers
     const recaptchaAction = "submit"//"action-name";
 
@@ -16,9 +26,14 @@ permissions.recaptchaToken = async (req, res, next) => {
       return res.status(400).json({ message: 'reCAPTCHA es requerido' });
     }
 
+    // // Rutas de los archivos JSON de credenciales
+    // let keyFilePath = path.resolve('./keys/chevalier-proyec-1727896169741-1e030ca111c3.json');
+    // const fallbackKeyFilePath = path.resolve('src/keys/chevalier-proyec-1727896169741-1e030ca111c3.json');
+
     // Rutas de los archivos JSON de credenciales
-    let keyFilePath = path.resolve('./keys/chevalier-proyec-1727896169741-1e030ca111c3.json');
-    const fallbackKeyFilePath = path.resolve('src/keys/chevalier-proyec-1727896169741-1e030ca111c3.json');
+    let keyFilePath = path.resolve('./keys/cheva-448521-941d79d7243b.json');
+    const fallbackKeyFilePath = path.resolve('src/keys/cheva-448521-941d79d7243b.json');
+
 
     // Verificar si el archivo JSON existe, si no, cambiar a la ruta alternativa
     if (!fs.existsSync(keyFilePath)) { 
@@ -60,6 +75,8 @@ permissions.recaptchaToken = async (req, res, next) => {
       // Verificar si la puntuación de riesgo es aceptable (>0.5)
       if (response.riskAnalysis.score > 0.5) {
         // Continuar con el flujo normal (validación exitosa)
+        console.log('Validación de reCAPTCHA exitosa');
+        console.log('Request body antes de next():', req.body); // Verifica el cuerpo de la solicitud antes de llamar a next()
         next();
       } else {
         // Rechazar la solicitud porque parece ser un bot
