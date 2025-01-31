@@ -1,11 +1,11 @@
 const functions = {};
 const mongoose = require("mongoose");
 const ObjectId = mongoose.Types.ObjectId;
-const Sequential=require("../db/counters")
-const Client = require('../db/clients'); 
-const Discount=require("../db/discounts") 
-const Service=require('../db/productservices')
-const HaircutCounter=require('../db/haircutcounters')
+const Sequential = require("../db/counters");
+const Client = require('../db/clients');
+const Discount = require("../db/discounts");
+const Service = require('../db/productservices');
+const HaircutCounter = require('../db/haircutcounters');
 
 functions.getSequential = async (data) => {
     try {
@@ -306,5 +306,88 @@ functions.hasCorteGeneral=async ( productosservcio)=>{
     return false;
   }
 }
+
+functions.taskAt8 = async () => {
+  console.log('Ejecutando tarea a las 8 todos los jueves');
+  try {
+    // Buscar el descuento de jueves
+    const thursdayDiscount = await Discount.findOne({ name: 'DESCUENTO JUEVES' });
+    if (!thursdayDiscount) {
+      console.log('No se encontró el descuento con nombre "DESCUENTO JUEVES".');
+      return;
+    }
+
+    // Actualizar los campos validFrom y validUntil
+    const now = new Date();
+    const validFrom = new Date(now.setHours(12, 26, 0, 0)); // Inicio del descuento a las 8 AM (Se debe colocar con la zona horaria local, sin importar que en la base de datos se almacene en UTC)
+    const validUntil = new Date(now.setHours(13, 28, 0, 0)); // Fin del descuento a las 12 PM  (Se debe colocar con la zona horaria local, sin importar que en la base de datos se almacene en UTC)
+
+    thursdayDiscount.validFrom = validFrom;
+    thursdayDiscount.validUntil = validUntil;
+
+    // Actualizar la cantidad de cortes gratis de los clientes a 1
+    thursdayDiscount.customers = thursdayDiscount.customers.map(customer => ({
+      ...customer,
+      freeCuts: 1
+    }));
+
+    // Guardar los cambios en el descuento
+    await thursdayDiscount.save();
+
+    console.log(`El descuento "DESCUENTO JUEVES" ha sido actualizado con las nuevas fechas de validez y cortes gratis.`);
+
+    return { validFrom, validUntil };
+  } catch (error) {
+    console.error('Error al actualizar las fechas del descuento de jueves:', error);
+  }
+
+  // Lógica provisional para agregar clientes al descuento del jueves (hasta mover de forma permanente los clientes al esquema)
+  console.log('Ejecutando tarea a las 8 todos los jueves');
+  try {
+    // Buscar el descuento de jueves
+    const thursdayDiscount = await Discount.findOne({ name: 'DESCUENTO JUEVES' });
+    if (!thursdayDiscount) {
+      console.log('No se encontró el descuento con nombre "DESCUENTO JUEVES".');
+      return;
+    }
+
+    // Obtener todos los clientes
+    const allClients = await Client.find({});
+
+    // Agregar todos los clientes al descuento
+    thursdayDiscount.customers = allClients.map(client => ({
+      customer: client._id,
+      freeCuts: 1, // Asigna un corte gratuito o ajusta según sea necesario
+    }));
+
+    // Guardar los cambios en el descuento
+    await thursdayDiscount.save();
+
+  } catch (error) {
+    console.error('Error al agregar clientes al descuento de jueves:', error);
+  }
+};
+
+// functions.taskAt12 = async () => {
+//   console.log('Ejecutando tarea a las 12 todos los jueves');
+//   try {
+//     // Buscar el descuento de jueves
+//     const thursdayDiscount = await Discount.findOne({ name: 'DESCUENTO JUEVES' });
+//     if (!thursdayDiscount) {
+//       console.log('No se encontró el descuento con nombre "DESCUENTO JUEVES".');
+//       return;
+//     }
+
+//     // Eliminar todos los clientes del descuento
+//     thursdayDiscount.customers = [];
+
+//     // Guardar los cambios en el descuento
+//     await thursdayDiscount.save();
+
+//     console.log(`Todos los clientes fueron eliminados del descuento "DESCUENTO JUEVES".`);
+//   } catch (error) {
+//     console.error('Error al eliminar clientes del descuento de jueves:', error);
+//   }
+// };
+
 module.exports = functions;
- 

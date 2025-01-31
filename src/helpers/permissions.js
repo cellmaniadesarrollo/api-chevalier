@@ -10,13 +10,14 @@ const User= require("../db/users")
 // Middleware para verificar el token de reCAPTCHA
 permissions.recaptchaToken = async (req, res, next) => {
   try {
+    console.log('Request body antes de middleware:', req.body)
     // const projectID = "chevalier-proyec-1727896169741";
-    // const recaptchaKey = "6Le83VUqAAAAAAdwGCtIGFF5QTEc82FNsFYWIbKt";
+    // const recaptchaKey = "6Le83VUqAAAAAAdwGCtIGFF5QTEc82FNsFYWIbKt"; // Clave secreta de reCAPTCHA obtenida desde el panel de administración de google cloud
     // const token = req.headers['recaptcha-token']; // Obteniendo el token desde los headers
     // const recaptchaAction = "submit"//"action-name";
 
     // Credenciales nuevas
-    console.log('Request body antes de middleware:', req.body)
+
     const projectID = "cheva-448521";
     const recaptchaKey = "6Lf_C78qAAAAABW1udsb9PmInY4f5e1TBw5C5Z8Y";
     const token = req.headers['recaptcha-token']; // Obteniendo el token desde los headers
@@ -27,8 +28,8 @@ permissions.recaptchaToken = async (req, res, next) => {
     }
 
     // // Rutas de los archivos JSON de credenciales
-    // let keyFilePath = path.resolve('./keys/chevalier-proyec-1727896169741-1e030ca111c3.json');
-    // const fallbackKeyFilePath = path.resolve('src/keys/chevalier-proyec-1727896169741-1e030ca111c3.json');
+    // let keyFilePath = path.resolve('./keys/chevalier-proyec-1727896169741-0c064011e2cb.json');
+    // const fallbackKeyFilePath = path.resolve('src/keys/chevalier-proyec-1727896169741-0c064011e2cb.json');
 
     // Rutas de los archivos JSON de credenciales
     let keyFilePath = path.resolve('./keys/cheva-448521-941d79d7243b.json');

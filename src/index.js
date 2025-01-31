@@ -9,8 +9,7 @@ const https = require('https');
 const fs = require('fs'); 
 const WebSocket = require('ws');
 const{ticktockupdate}=require('./Controllers/AppController')
-const {updateBirthdayDiscount}=require('./functions/functions')
-// Configura las opciones HTTPS
+const {updateBirthdayDiscount, taskAt8, taskAt12}=require('./functions/functions')
 const cron = require('node-cron');
 const { env } = require('node:process');
 
@@ -46,11 +45,19 @@ const app = express();
 //Tarea programada para las 12:00 p.m. y las 12:00 a.m.
 
 cron.schedule('0 0,12 * * *', () => {
+  console.log('Ejecutando ticktockupdate');
   ticktockupdate()
 });
 // Programar la ejecución diaria a las 12:05 AM
 cron.schedule('5 0 * * *', () => {
+  console.log('Ejecutando updateBirthdayDiscount');
   updateBirthdayDiscount();
+});
+
+// Tarea programada para todos los jueves a las 8
+cron.schedule('28 12 * * 5', () => {
+  console.log('Ejecutando taskAt8 todos los jueves a las 8');
+  taskAt8();
 });
 
 // cron.schedule('*/10 * * * * *', () => {

@@ -36,19 +36,29 @@ SalesModels.finddiscounts = async (clientId) => {
     if (typeof clientId !== 'string') {
       throw new Error('clientId debe ser un string');
     }
+    const now = new Date();
+    console.log(`Fecha actual (now): ${now}`); // Imprime la fecha actual
+
+
     const pipeline = [
       {
         $match: {
-          $or: [
-            { isGlobal: true },  // Descuento global
+          $and: [
             {
-              customers: {
-                $elemMatch: {
-                  customer: new ObjectId(clientId),
-                  freeCuts: { $gt: 0 }
+              $or: [
+                { isGlobal: true },  // Descuento global
+                {
+                  customers: {
+                    $elemMatch: {
+                      customer: new ObjectId(clientId),
+                      freeCuts: { $gt: 0 }
+                    }
+                  }
                 }
-              }
-            }
+              ],
+            },
+            { validFrom: { $lte: now } },  // Fecha de inicio de validez
+            { validUntil: { $gte: now } }  // Fecha de fin de validez
           ],
         },
       },
