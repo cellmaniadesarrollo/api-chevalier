@@ -13,19 +13,19 @@ permissions.recaptchaToken = async (req, res, next) => {
     console.log('Request body antes de middleware:', req.body)
     // Credenciales nuevas
 
-    // const projectID = "cheva-448521";
-    // const recaptchaKey = "6Lf_C78qAAAAABW1udsb9PmInY4f5e1TBw5C5Z8Y";
-    // const token = req.headers['recaptcha-token']; // Obteniendo el token desde los headers
-    // const recaptchaAction = "submit"//"action-name";
+    const projectID = "cheva-448521";
+    const recaptchaKey = "6Lf_C78qAAAAABW1udsb9PmInY4f5e1TBw5C5Z8Y";
+    const token = req.headers['recaptcha-token']; // Obteniendo el token desde los headers
+    const recaptchaAction = "submit"//"action-name";
 
     if (!token) {
       return res.status(400).json({ message: 'reCAPTCHA es requerido' });
     }
 
     /////// Descomentar para usar credenciales de google cloud
-    // // Rutas de los archivos JSON de credenciales
-    // let keyFilePath = path.resolve('./keys/cheva-448521-941d79d7243b.json');
-    // const fallbackKeyFilePath = path.resolve('src/keys/cheva-448521-941d79d7243b.json');
+    // Rutas de los archivos JSON de credenciales
+    let keyFilePath = path.resolve('./keys/cheva-448521-941d79d7243b.json');
+    const fallbackKeyFilePath = path.resolve('src/keys/cheva-448521-941d79d7243b.json');
 
 
     // Verificar si el archivo JSON existe, si no, cambiar a la ruta alternativa
