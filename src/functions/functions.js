@@ -65,75 +65,81 @@ functions.hasFreeCuts=async (customerId , serviceName = "CORTE GENERAL",discount
         return false;
       }
 }
-functions.manageHaircutCounter=async (customerId , serviceName = "CORTE GENERAL",discountName="FIDELITY_DISCOUNT")=>{
-    try {
-        // Buscar el servicio por nombre
-        const serviceget = await Service.findOne({ name: serviceName });
-        if (!serviceget) {
-          console.log(`El servicio "${serviceName}" no fue encontrado.`);
-          return;
-        }
-    
-        // Buscar o crear el contador del cliente para este servicio
-        let counter = await HaircutCounter.findOne({ customer: customerId, service: serviceget._id });
-    
-        if (!counter) {
-          console.log('El cliente no tiene un contador. Creando uno nuevo...');
-          counter = new HaircutCounter({
-            customer: customerId,
-            service: serviceget._id,
-            counter: 0,
-          });
-        }
-    
-        // Incrementar el contador
-        counter.counter += 1;
-        console.log(`Contador incrementado: ${counter.counter}`);
-    
-        // Si el contador llega a 5, reiniciar y actualizar el descuento
-        if (counter.counter >= 5) {
-          counter.counter = 0; // Reiniciar el contador
-          console.log('El contador alcanzó 6. Reiniciando a 0.');
-    
-          // Buscar el descuento asociado al servicio y cliente
-          let discount = await Discount.findOne({
-            name: discountName,
-            productsOrServices: serviceget._id,
-            'customers.customer': customerId,
-          });
-    
-          if (!discount) {
-            console.log('No se encontró un descuento para este cliente y servicio. Agregando al descuento...');
-            discount = await Discount.findOneAndUpdate(
-              { name: discountName, productsOrServices: serviceget._id }, // Buscar por descuento y servicio
-              {
-                $push: {
-                  customers: { 
-                    customer: customerId, 
-                    freeCuts: 1, // Inicializamos con un corte gratuito
-                    discountValue: null, // Valor específico del descuento
-                  },
-                },
+functions.manageHaircutCounter = async (customerId, serviceName = "CORTE GENERAL", discountName = "FIDELITY_DISCOUNT", selectedDiscountName = null) => {
+  try {
+    // Buscar el servicio por nombre
+    const serviceget = await Service.findOne({ name: serviceName });
+    if (!serviceget) {
+      console.log(`El servicio "${serviceName}" no fue encontrado.`);
+      return;
+    }
+
+    // Verificar si el descuento seleccionado es el del Jueves
+    if (selectedDiscountName === 'DESCUENTO JUEVES') {
+      console.log('El descuento seleccionado es el del Jueves. No se incrementará el contador.');
+      return;
+    }
+
+    // Buscar o crear el contador del cliente para este servicio
+    let counter = await HaircutCounter.findOne({ customer: customerId, service: serviceget._id });
+
+    if (!counter) {
+      console.log('El cliente no tiene un contador. Creando uno nuevo...');
+      counter = new HaircutCounter({
+        customer: customerId,
+        service: serviceget._id,
+        counter: 0,
+      });
+    }
+
+    // Incrementar el contador
+    counter.counter += 1;
+    console.log(`Contador incrementado: ${counter.counter}`);
+
+    // Si el contador llega a 5, reiniciar y actualizar el descuento
+    if (counter.counter >= 5) {
+      counter.counter = 0; // Reiniciar el contador
+      console.log('El contador alcanzó 6. Reiniciando a 0.');
+
+      // Buscar el descuento asociado al servicio y cliente
+      let discount = await Discount.findOne({
+        name: discountName,
+        productsOrServices: serviceget._id,
+        'customers.customer': customerId,
+      });
+
+      if (!discount) {
+        console.log('No se encontró un descuento para este cliente y servicio. Agregando al descuento...');
+        discount = await Discount.findOneAndUpdate(
+          { name: discountName, productsOrServices: serviceget._id }, // Buscar por descuento y servicio
+          {
+            $push: {
+              customers: { 
+                customer: customerId, 
+                freeCuts: 1, // Inicializamos con un corte gratuito
+                discountValue: null, // Valor específico del descuento
               },
-              { new: true, upsert: true } // Crear si no existe
-            );
-          } else {
-            // Incrementar los cortes gratuitos del cliente en el descuento
-            const customerIndex = discount.customers.findIndex(c => c.customer.toString() === customerId.toString());
-            if (customerIndex !== -1) {
-              discount.customers[customerIndex].freeCuts += 1;
-              console.log('Cortes gratuitos incrementados en el descuento.');
-            }
-          }
-    
-          await discount.save();
+            },
+          },
+          { new: true, upsert: true } // Crear si no existe
+        );
+      } else {
+        // Incrementar los cortes gratuitos del cliente en el descuento
+        const customerIndex = discount.customers.findIndex(c => c.customer.toString() === customerId.toString());
+        if (customerIndex !== -1) {
+          discount.customers[customerIndex].freeCuts += 1;
+          console.log('Cortes gratuitos incrementados en el descuento.');
         }
-    
-        // Guardar los cambios en el contador
-        await counter.save();
-      } catch (error) {
-        console.error('Error al gestionar el contador de cortes:', error);
       }
+
+      await discount.save();
+    }
+
+    // Guardar los cambios en el contador
+    await counter.save();
+  } catch (error) {
+    console.error('Error al gestionar el contador de cortes:', error);
+  }
 }
 functions.applyDiscounts=async (saleData)=>{
     try {
@@ -319,8 +325,8 @@ functions.taskAt8 = async () => {
 
     // Actualizar los campos validFrom y validUntil
     const now = new Date();
-    const validFrom = new Date(now.setHours(12, 26, 0, 0)); // Inicio del descuento a las 8 AM (Se debe colocar con la zona horaria local, sin importar que en la base de datos se almacene en UTC)
-    const validUntil = new Date(now.setHours(13, 28, 0, 0)); // Fin del descuento a las 12 PM  (Se debe colocar con la zona horaria local, sin importar que en la base de datos se almacene en UTC)
+    const validFrom = new Date(now.setHours(9, 32, 0, 0)); // Inicio del descuento a las 8 AM (13h00 UTC) (Se debe colocar con la zona horaria local, sin importar que en la base de datos se almacene en UTC)
+    const validUntil = new Date(now.setHours(13, 28, 0, 0)); // Fin del descuento a las 12 PM (17h00 UTC) (Se debe colocar con la zona horaria local, sin importar que en la base de datos se almacene en UTC)
 
     thursdayDiscount.validFrom = validFrom;
     thursdayDiscount.validUntil = validUntil;

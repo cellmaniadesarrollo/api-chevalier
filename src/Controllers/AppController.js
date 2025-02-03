@@ -108,6 +108,9 @@ AppController.consultaCortes = async (req, res) => {
           { $match: { client: cliente._id } },
           { $unwind: '$productsOrServices' },
           { $match: { 'productsOrServices.item': new mongoose.Types.ObjectId('671693cfabafcf7a889a0fdd') } },
+          { $lookup: { from: 'discounts', localField: 'productsOrServices.discount', foreignField: '_id', as: 'discountDetails' } },
+          { $unwind: '$discountDetails' },
+          { $match: { 'discountDetails.name': { $ne: 'DESCUENTO JUEVES' } } }, // Filtrar los cortes con el descuento del Jueves
           { $sort: { saleDate: -1 } },
           { $limit: 5 },
           { $lookup: { from: 'users', localField: 'barber', foreignField: '_id', as: 'barber' } },
@@ -199,6 +202,9 @@ AppController.consultaCortes = async (req, res) => {
       { $match: { client: cliente._id } },
       { $unwind: '$productsOrServices' },
       { $match: { 'productsOrServices.item': new mongoose.Types.ObjectId('671693cfabafcf7a889a0fdd') } },
+      { $lookup: { from: 'discounts', localField: 'productsOrServices.discount', foreignField: '_id', as: 'discountDetails' } },
+      { $unwind: '$discountDetails' },
+      { $match: { 'discountDetails.name': { $ne: 'DESCUENTO JUEVES' } } }, // Filtrar los cortes con el descuento del Jueves
       { $sort: { saleDate: -1 } },
       { $limit: haircutCounter.counter },
       { $lookup: { from: 'users', localField: 'barber', foreignField: '_id', as: 'barber' } },

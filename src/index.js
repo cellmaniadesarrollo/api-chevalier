@@ -55,7 +55,7 @@ cron.schedule('5 0 * * *', () => {
 });
 
 // Tarea programada para todos los jueves a las 8
-cron.schedule('28 12 * * 5', () => {
+cron.schedule('45 9 * * 1', () => {
   console.log('Ejecutando taskAt8 todos los jueves a las 8');
   taskAt8();
 });
