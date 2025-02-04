@@ -334,7 +334,7 @@ functions.taskAt8 = async () => {
     // Actualizar la cantidad de cortes gratis de los clientes a 1
     thursdayDiscount.customers = thursdayDiscount.customers.map(customer => ({
       ...customer,
-      freeCuts: 2
+      freeCuts: 1
     }));
 
     // Guardar los cambios en el descuento
