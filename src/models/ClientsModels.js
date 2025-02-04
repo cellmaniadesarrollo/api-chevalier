@@ -96,13 +96,6 @@ ClientsModels.find = async (query) => {
   }
 };
 
-
-
-
-
-
-
-
 // Guardar múltiples clientes
 async function guardarClientes() {
   const userId = '67093a19fc10924562fe2eea'; // ID del creador

@@ -325,8 +325,8 @@ functions.taskAt8 = async () => {
 
     // Actualizar los campos validFrom y validUntil
     const now = new Date();
-    const validFrom = new Date(now.setHours(8, 35, 0, 0)); // Inicio del descuento a las 8 AM (13h00 UTC) (Se debe colocar con la zona horaria local, sin importar que en la base de datos se almacene en UTC)
-    const validUntil = new Date(now.setHours(14, 0, 0, 0)); // Fin del descuento a las 12 PM (17h00 UTC) (Se debe colocar con la zona horaria local, sin importar que en la base de datos se almacene en UTC)
+    const validFrom = new Date(now.setHours(8, 0, 0, 0)); // Inicio del descuento a las 8 AM (13h00 UTC) (Se debe colocar con la zona horaria local, sin importar que en la base de datos se almacene en UTC)
+    const validUntil = new Date(now.setHours(12, 0, 0, 0)); // Fin del descuento a las 12 PM (17h00 UTC) (Se debe colocar con la zona horaria local, sin importar que en la base de datos se almacene en UTC)
 
     thursdayDiscount.validFrom = validFrom;
     thursdayDiscount.validUntil = validUntil;
@@ -334,7 +334,7 @@ functions.taskAt8 = async () => {
     // Actualizar la cantidad de cortes gratis de los clientes a 1
     thursdayDiscount.customers = thursdayDiscount.customers.map(customer => ({
       ...customer,
-      freeCuts: 1
+      freeCuts: 2
     }));
 
     // Guardar los cambios en el descuento
@@ -373,27 +373,5 @@ functions.taskAt8 = async () => {
     console.error('Error al agregar clientes al descuento de jueves:', error);
   }
 };
-
-// functions.taskAt12 = async () => {
-//   console.log('Ejecutando tarea a las 12 todos los jueves');
-//   try {
-//     // Buscar el descuento de jueves
-//     const thursdayDiscount = await Discount.findOne({ name: 'DESCUENTO JUEVES' });
-//     if (!thursdayDiscount) {
-//       console.log('No se encontró el descuento con nombre "DESCUENTO JUEVES".');
-//       return;
-//     }
-
-//     // Eliminar todos los clientes del descuento
-//     thursdayDiscount.customers = [];
-
-//     // Guardar los cambios en el descuento
-//     await thursdayDiscount.save();
-
-//     console.log(`Todos los clientes fueron eliminados del descuento "DESCUENTO JUEVES".`);
-//   } catch (error) {
-//     console.error('Error al eliminar clientes del descuento de jueves:', error);
-//   }
-// };
 
 module.exports = functions;

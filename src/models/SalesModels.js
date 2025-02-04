@@ -11,6 +11,7 @@ const SalesModeldb = require("../db/sales");
 const productservicestypes = require("../db/productservicestypes");
 const ProductService = require('../db/productservices');
 const functions = require('../functions/functions');
+const now = new Date();
 
 SalesModels.findpaymentMethods = async () => {
   return await paymentMethods.aggregate([
@@ -37,19 +38,26 @@ SalesModels.finddiscounts = async (clientId) => {
     const pipeline = [
       {
         $match: {
-          $or: [
-            { isGlobal: true },  // Descuento global
+          $and: [
             {
-              customers: {
-                $elemMatch: {
-                  customer: new ObjectId(clientId),
-                  freeCuts: { $gt: 0 }
+              $or: [
+                { isGlobal: true },  // Descuento global
+                {
+                  customers: {
+                    $elemMatch: {
+                      customer: new ObjectId(clientId),
+                      freeCuts: { $gt: 0 }
+                    }
+                  }
                 }
-              }
-            }
+              ],
+            },
+            { validFrom: { $lte: now } },  // Fecha de inicio de validez
+            { validUntil: { $gte: now } }  // Fecha de fin de validez
           ],
         },
       },
+      
       {
         $lookup: {
           from: 'discounttypes',  // Referencia a la colección de tipos de descuento
@@ -145,9 +153,9 @@ SalesModels.save = async (data, user) => {
       // Verificar si la compra se realizó dentro del rango de tiempo válido
       const now = new Date();
       const startOfThursday = new Date(now);
-      startOfThursday.setUTCHours(8, 0, 0, 0);
+      startOfThursday.setUTCHours(13, 0, 0, 0); //Se debe colocar en horario UTC
       const endOfThursday = new Date(now);
-      endOfThursday.setUTCHours(12, 20, 0, 0);
+      endOfThursday.setUTCHours(17, 0, 0, 0); //Se debe colocar en horario UTC
 
       const isWithinValidTimeRange = now >= startOfThursday && now <= endOfThursday;
 
