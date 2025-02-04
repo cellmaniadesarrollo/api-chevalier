@@ -219,7 +219,7 @@ SalesModels.save = async (data, user) => {
 
   } catch (error) {
     console.error('Error al guardar la venta:', error);
-    throw new Error('No se pudo guardar la venta');
+    throw new Error(error.message);
   }
 }
 SalesModels.list = async (data) => {

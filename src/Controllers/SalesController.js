@@ -66,6 +66,12 @@ SalesController.save = async (req, res) => {
         res.status(200).json(sales)
     } catch (error) {
         console.log(error.message)
+        // Check for specific error message
+        if (error.message.includes('La compra con descuento del jueves está fuera del rango de tiempo permitido')) {
+            return res.status(400).json({
+                message: 'Error al guardar la venta: ' + error.message,
+            });
+        }
         // Cualquier otro error no controlado
         res.status(500).json({
             message: error.message,
