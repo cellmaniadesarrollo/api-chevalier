@@ -1,32 +1,30 @@
 const SalesModels = {};
-const sdb = require("../db/productservicestypes")
-const paymentMethods = require('../db/paymentMethods')
+const sdb = require("../db/productservicestypes");
+const paymentMethods = require('../db/paymentMethods');
 const DiscountModel = require('../db/discounts');
 const mongoose = require("mongoose");
 const ObjectId = mongoose.Types.ObjectId;
-const financialentitysModel = require("../db/financialEntitys")
-const Sequential = require("../functions/functions")
-const PaymentDetailsModel = require("../db/paymentDetails")
-const SalesModeldb = require("../db/sales")
-const productservicestypes = require("../db/productservicestypes")
-const ProductService = require('../db/productservices')
-const functions = require('../functions/functions')
+const financialentitysModel = require("../db/financialEntitys");
+const Sequential = require("../functions/functions");
+const PaymentDetailsModel = require("../db/paymentDetails");
+const SalesModeldb = require("../db/sales");
+const productservicestypes = require("../db/productservicestypes");
+const ProductService = require('../db/productservices');
+const functions = require('../functions/functions');
 
 SalesModels.findpaymentMethods = async () => {
-
   return await paymentMethods.aggregate([
     {
-      $match:
-        { active: true }
+      $match: { active: true }
     },
     {
-
       $project: {
         _id: 1,
         name: 1
       }
-    }])
-}
+    }
+  ]);
+};
 
 //new ObjectId
 SalesModels.finddiscounts = async (clientId) => {
@@ -136,6 +134,30 @@ SalesModels.getproductservicestypes = async () => {
 }
 SalesModels.save = async (data, user) => {
   try {
+    // Verificar si la compra tiene al menos un descuento del jueves
+    const hasThursdayDiscount = data.productosservcio.some(item => {
+      return item.discountName === 'DESCUENTO JUEVES';
+    });
+
+    let skipCounterLogic = false;
+
+    if (hasThursdayDiscount) {
+      // Verificar si la compra se realizó dentro del rango de tiempo válido
+      const now = new Date();
+      const startOfThursday = new Date(now);
+      startOfThursday.setUTCHours(8, 0, 0, 0);
+      const endOfThursday = new Date(now);
+      endOfThursday.setUTCHours(12, 20, 0, 0);
+
+      const isWithinValidTimeRange = now >= startOfThursday && now <= endOfThursday;
+
+      if (isWithinValidTimeRange) {
+        skipCounterLogic = true;
+      } else {
+        throw new Error('La compra con descuento del jueves está fuera del rango de tiempo permitido.');
+      }
+    }
+
     // 1. Generar número de orden
     const numberOrder = await Sequential.getSequential("sales");
 
@@ -174,20 +196,22 @@ SalesModels.save = async (data, user) => {
     // Guardar la venta en la base de datos
     const sale = await SalesModeldb.create(saleData);
 
-    const consumidorFinal = await functions.isConsumidorFinal(data.cliente)
-    const corteGeneral = await functions.hasCorteGeneral(data.productosservcio)
- 
-    if (!consumidorFinal && corteGeneral) {
-      const freeCuts = await functions.hasFreeCuts(data.cliente)
-      if (!freeCuts) {
+    // Si la variable cambia no ejecuta la lógica a continuación
+    if (!skipCounterLogic) {
+      const consumidorFinal = await functions.isConsumidorFinal(data.cliente);
+      const corteGeneral = await functions.hasCorteGeneral(data.productosservcio);
 
-        await functions.manageHaircutCounter(data.cliente)
-      } {
-        console.log('el cliente tiene cortes gratis disponibles')
-        await functions.applyDiscounts(data)
+      if (!consumidorFinal && corteGeneral) {
+        const freeCuts = await functions.hasFreeCuts(data.cliente);
+        if (!freeCuts) {
+          await functions.manageHaircutCounter(data.cliente);
+        } else {
+          console.log('el cliente tiene cortes gratis disponibles');
+          await functions.applyDiscounts(data);
+        }
+      } else {
+        console.log('es consumidor final o tiene corte general');
       }
-    } else {
-      console.log('es consumidor final o tiene corte general')
     }
 
     // Devolver la venta creada
@@ -2565,4 +2589,3 @@ async function savediscount100() {
   }
 }
 module.exports = SalesModels;
-

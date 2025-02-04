@@ -65,10 +65,10 @@ SalesController.save = async (req, res) => {
 
         res.status(200).json(sales)
     } catch (error) {
-        console.log(error)
+        console.log(error.message)
         // Cualquier otro error no controlado
         res.status(500).json({
-            message: 'Error interno del servidor: ' + error.message,
+            message: error.message,
         });
     }
 }

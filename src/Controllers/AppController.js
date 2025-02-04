@@ -6,7 +6,7 @@ const HaircutCounters = require('../db/haircutcounters'); // Importa el modelo h
 const Sales = require('../db/sales'); // Importa el modelo sales
 const ProductServices = require('../db/productservices'); // Importa el modelo productservices
 const Discounts = require('../db/discounts'); // Importa el modelo discounts
-
+const SalesModels = require("../models/SalesModels"); // Importa el modelo SalesModels
 
 AppController.index = async (req, res) => {
   res.sendFile(__dirname + "/views/");
@@ -27,7 +27,7 @@ AppController.ticktockupdate = async () => {
 
 AppController.ticktock = async (req, res) => {
   try {
-    const data = await index.tictock()
+    const data = await index.ticktock()
 
     res.json(data)
   } catch (error) {
@@ -95,8 +95,16 @@ AppController.consultaCortes = async (req, res) => {
     // Imprime los nombres y apellidos del cliente
     console.log('Nombres del cliente:', cliente.names);
     console.log('Apellidos del cliente:', cliente.lastNames);
-    // console.log(cliente._id.toHexString());
 
+    // Filtrar las ventas que no tienen ningún descuento del jueves
+    const validSales = await Sales.find({
+      client: cliente._id,
+      'productsOrServices.discount': { $ne: new mongoose.Types.ObjectId('679bcbd86c52e04db5ed9b31') }
+    });
+    const productsservices = await ProductServices.find({name: 'CORTE GENERAL'});
+    const haircutCounter = await HaircutCounters.findOne({ service: productsservices[0]._id, customer: cliente._id});
+
+    
     // Check for FIDELITY_DISCOUNT
     const discount = await Discounts.findOne({ name: 'FIDELITY_DISCOUNT', 'customers.customer': cliente._id });
     if (discount) {
@@ -105,21 +113,65 @@ AppController.consultaCortes = async (req, res) => {
         console.log('El cliente tiene un corte gratis con el descuento FIDELITY_DISCOUNT');
         // Realiza una consulta en la colección sales para obtener las últimas 5 ventas
         const sales = await Sales.aggregate([
-          { $match: { client: cliente._id } },
+          { $match: { _id: { $in: validSales.map(sale => sale._id) } } },
           { $unwind: '$productsOrServices' },
-          { $match: { 'productsOrServices.item': new mongoose.Types.ObjectId('671693cfabafcf7a889a0fdd') } },
-          { $lookup: { from: 'discounts', localField: 'productsOrServices.discount', foreignField: '_id', as: 'discountDetails' } },
+          { $match: { 'productsOrServices.item': productsservices[0]._id } },
+          {
+            $lookup: {
+              from: 'discounts',
+              localField: 'productsOrServices.discount',
+              foreignField: '_id',
+              as: 'discountDetails'
+            }
+          },
           { $unwind: '$discountDetails' },
           { $match: { 'discountDetails.name': { $ne: 'DESCUENTO JUEVES' } } }, // Filtrar los cortes con el descuento del Jueves
+          {
+            $group: {
+              _id: '$_id',
+              client: { $first: '$client' },
+              productsOrServices: { $push: '$productsOrServices' },
+              saleDate: { $first: '$saleDate' },
+              barber: { $first: '$barber' },
+              discountDetails: { $push: '$discountDetails' }
+            }
+          },
+          {
+            $match: {
+              'discountDetails.name': { $ne: 'DESCUENTO JUEVES' }
+            }
+          },
           { $sort: { saleDate: -1 } },
           { $limit: 5 },
-          { $lookup: { from: 'users', localField: 'barber', foreignField: '_id', as: 'barber' } },
+          {
+            $lookup: {
+              from: 'users',
+              localField: 'barber',
+              foreignField: '_id',
+              as: 'barber'
+            }
+          },
           { $unwind: '$barber' },
-          { $lookup: { from: 'personaldatas', localField: 'barber.personalData', foreignField: '_id', as: 'barbername' } },
+          {
+            $lookup: {
+              from: 'personaldatas',
+              localField: 'barber.personalData',
+              foreignField: '_id',
+              as: 'barbername'
+            }
+          },
           { $unwind: '$barbername' },
-          { $lookup: { from: 'productservices', localField: 'productsOrServices.item', foreignField: '_id', as: 'productsOrServices.item' } },
+          {
+            $lookup: {
+              from: 'productservices',
+              localField: 'productsOrServices.item',
+              foreignField: '_id',
+              as: 'productsOrServices.item'
+            }
+          },
           { $unwind: '$productsOrServices.item' },
-          { $project: { 
+          {
+            $project: {
               barber: {
                 firstnames: '$barbername.firstnames',
                 firstnames1: '$barbername.firstnames1',
@@ -127,11 +179,15 @@ AppController.consultaCortes = async (req, res) => {
                 lastnames1: '$barbername.lastnames1'
               },
               productServiceName: '$productsOrServices.item.name',
-              saleDate: 1 
-            } 
+              saleDate: 1
+            }
           }
         ]);
-        console.log('Ventas del cliente:', sales);
+        if (!sales || sales.length === 0) {
+          console.log('No se encontraron ventas asociadas al cliente:', cliente._id.toHexString());
+        } else {
+          console.log('Ventas del cliente:', sales);
+        }
         return res.status(200).json({ 
           success: true, 
           names: cliente.names, 
@@ -140,17 +196,13 @@ AppController.consultaCortes = async (req, res) => {
           services: sales.map(sale => sale.productServiceName), // Nombres de los servicios
           barbers: sales.map(sale => `${sale.barber.firstnames} ${sale.barber.firstnames1} ${sale.barber.lastnames} ${sale.barber.lastnames1}`), // Nombres completos de los barberos
           dates: sales.map(sale => sale.saleDate.toISOString().split('T')[0]), // Fechas de las ventas en formato YYYY-MM-DD
-          sales, // Include the sales data
+          sales: sales, // Include the sales data
           message: '¡Felicidades! Tienes un corte gratis con nuestro descuento de fidelidad.'
         });
       }
     }
 
-    const productsservices = await ProductServices.find({name: 'CORTE GENERAL'});
-    // console.log('productsservces:', productsservices[0]._id);
 
-    const haircutCounter = await HaircutCounters.findOne({ service: productsservices[0]._id, customer: cliente._id});
-    // console.log('haircutCounter1:', haircutCounter);
     
     if (!haircutCounter) {
       console.log('El cliente no tiene aún cortes registrados:', cliente._id.toHexString());
@@ -197,23 +249,68 @@ AppController.consultaCortes = async (req, res) => {
       });
     }
     
-    // Realiza una consulta en la colección sales para obtener las últimas 6 ventas
+
+    // Realiza una consulta en la colección sales para obtener las últimas ventas válidas
     const sales = await Sales.aggregate([
-      { $match: { client: cliente._id } },
+      { $match: { _id: { $in: validSales.map(sale => sale._id) } } },
       { $unwind: '$productsOrServices' },
-      { $match: { 'productsOrServices.item': new mongoose.Types.ObjectId('671693cfabafcf7a889a0fdd') } },
-      { $lookup: { from: 'discounts', localField: 'productsOrServices.discount', foreignField: '_id', as: 'discountDetails' } },
+      { $match: { 'productsOrServices.item': productsservices[0]._id } },
+      {
+        $lookup: {
+          from: 'discounts',
+          localField: 'productsOrServices.discount',
+          foreignField: '_id',
+          as: 'discountDetails'
+        }
+      },
       { $unwind: '$discountDetails' },
       { $match: { 'discountDetails.name': { $ne: 'DESCUENTO JUEVES' } } }, // Filtrar los cortes con el descuento del Jueves
+      {
+        $group: {
+          _id: '$_id',
+          client: { $first: '$client' },
+          productsOrServices: { $push: '$productsOrServices' },
+          saleDate: { $first: '$saleDate' },
+          barber: { $first: '$barber' },
+          discountDetails: { $push: '$discountDetails' }
+        }
+      },
+      {
+        $match: {
+          'discountDetails.name': { $ne: 'DESCUENTO JUEVES' }
+        }
+      },
       { $sort: { saleDate: -1 } },
       { $limit: haircutCounter.counter },
-      { $lookup: { from: 'users', localField: 'barber', foreignField: '_id', as: 'barber' } },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'barber',
+          foreignField: '_id',
+          as: 'barber'
+        }
+      },
       { $unwind: '$barber' },
-      { $lookup: { from: 'personaldatas', localField: 'barber.personalData', foreignField: '_id', as: 'barbername' } },
+      {
+        $lookup: {
+          from: 'personaldatas',
+          localField: 'barber.personalData',
+          foreignField: '_id',
+          as: 'barbername'
+        }
+      },
       { $unwind: '$barbername' },
-      { $lookup: { from: 'productservices', localField: 'productsOrServices.item', foreignField: '_id', as: 'productsOrServices.item' } },
+      {
+        $lookup: {
+          from: 'productservices',
+          localField: 'productsOrServices.item',
+          foreignField: '_id',
+          as: 'productsOrServices.item'
+        }
+      },
       { $unwind: '$productsOrServices.item' },
-      { $project: { 
+      {
+        $project: {
           barber: {
             firstnames: '$barbername.firstnames',
             firstnames1: '$barbername.firstnames1',
@@ -221,8 +318,8 @@ AppController.consultaCortes = async (req, res) => {
             lastnames1: '$barbername.lastnames1'
           },
           productServiceName: '$productsOrServices.item.name',
-          saleDate: 1 
-        } 
+          saleDate: 1
+        }
       }
     ]);
 
@@ -240,7 +337,7 @@ AppController.consultaCortes = async (req, res) => {
       services: sales.map(sale => sale.productServiceName), // Nombres de los servicios
       barbers: sales.map(sale => `${sale.barber.firstnames} ${sale.barber.firstnames1} ${sale.barber.lastnames} ${sale.barber.lastnames1}`), // Nombres completos de los barberos
       dates: sales.map(sale => sale.saleDate.toISOString().split('T')[0]), // Fechas de las ventas en formato YYYY-MM-DD
-      sales // Include the sales data
+      sales: sales // Include the sales data
     });
   } catch (error) {
     console.log('Error en consultaCortes:', error);

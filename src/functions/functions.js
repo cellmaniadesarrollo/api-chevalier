@@ -75,7 +75,7 @@ functions.manageHaircutCounter = async (customerId, serviceName = "CORTE GENERAL
     }
 
     // Verificar si el descuento seleccionado es el del Jueves
-    if (selectedDiscountName === 'DESCUENTO JUEVES') {
+    if (discountName === 'DESCUENTO JUEVES') {
       console.log('El descuento seleccionado es el del Jueves. No se incrementará el contador.');
       return;
     }
@@ -99,7 +99,7 @@ functions.manageHaircutCounter = async (customerId, serviceName = "CORTE GENERAL
     // Si el contador llega a 5, reiniciar y actualizar el descuento
     if (counter.counter >= 5) {
       counter.counter = 0; // Reiniciar el contador
-      console.log('El contador alcanzó 6. Reiniciando a 0.');
+      console.log('El contador alcanzó 5. Reiniciando a 0.');
 
       // Buscar el descuento asociado al servicio y cliente
       let discount = await Discount.findOne({
@@ -325,8 +325,8 @@ functions.taskAt8 = async () => {
 
     // Actualizar los campos validFrom y validUntil
     const now = new Date();
-    const validFrom = new Date(now.setHours(9, 32, 0, 0)); // Inicio del descuento a las 8 AM (13h00 UTC) (Se debe colocar con la zona horaria local, sin importar que en la base de datos se almacene en UTC)
-    const validUntil = new Date(now.setHours(13, 28, 0, 0)); // Fin del descuento a las 12 PM (17h00 UTC) (Se debe colocar con la zona horaria local, sin importar que en la base de datos se almacene en UTC)
+    const validFrom = new Date(now.setHours(8, 35, 0, 0)); // Inicio del descuento a las 8 AM (13h00 UTC) (Se debe colocar con la zona horaria local, sin importar que en la base de datos se almacene en UTC)
+    const validUntil = new Date(now.setHours(14, 0, 0, 0)); // Fin del descuento a las 12 PM (17h00 UTC) (Se debe colocar con la zona horaria local, sin importar que en la base de datos se almacene en UTC)
 
     thursdayDiscount.validFrom = validFrom;
     thursdayDiscount.validUntil = validUntil;
