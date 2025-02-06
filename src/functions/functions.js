@@ -22,49 +22,29 @@ functions.getSequential = async (data) => {
 
 
 }
-functions.hasFreeCuts=async (customerId , serviceName = "CORTE GENERAL",discountName="FIDELITY_DISCOUNT")=>{
-    try {
-        // Buscar el servicio por nombre
-        const serviceget = await Service.findOne({ name: serviceName });
-        if (!serviceget) {
-          console.log(`El servicio "${serviceName}" no fue encontrado.`);
-          return false;
-        }
-    
-        // Buscar el descuento asociado al servicio y cliente
-        let discount = await Discount.findOne({
-          name: discountName,
-          productsOrServices: serviceget._id,
-          'customers.customer': customerId,
-        });
-    
-        // Si el descuento no existe para el cliente, agregar al cliente
-        if (!discount) {
-          console.log('No se encontró un descuento para este cliente y servicio. Agregando al descuento...');
-          discount = await Discount.findOneAndUpdate(
-            { name: discountName, productsOrServices: serviceget._id }, // Buscar por descuento y servicio
-            {
-              $push: {
-                customers: { 
-                  customer: customerId, 
-                  freeCuts: 0, // Se inicializa sin cortes gratuitos
-                  discountValue: null, // Valor específico del descuento (puede ajustarse)
-                },
-              },
-            },
-            { new: true, upsert: true } // Crear si no existe
-          );
-          console.log('Cliente agregado al descuento.');
-        }
-    
-        // Verificar si el cliente tiene cortes gratuitos disponibles
-        const customerData = discount.customers.find(c => c.customer.toString() === customerId.toString());
-        return customerData && customerData.freeCuts > 0;
-      } catch (error) {
-        console.error('Error en hasFreeCuts:', error);
-        return false;
+
+functions.hasFreeCuts = async (customerId) => {
+  try {
+    // Buscar todos los descuentos asociados al cliente
+    const discounts = await Discount.find({
+      'customers.customer': customerId,
+    });
+
+    // Verificar si el cliente tiene cortes gratuitos disponibles en cualquier descuento
+    for (const discount of discounts) {
+      const customerData = discount.customers.find(c => c.customer.toString() === customerId.toString());
+      if (customerData && customerData.freeCuts > 0) {
+        return true;
       }
+    }
+
+    return false;
+  } catch (error) {
+    console.error('Error en hasFreeCuts:', error);
+    return false;
+  }
 }
+
 functions.manageHaircutCounter = async (customerId, serviceName = "CORTE GENERAL", discountName = "FIDELITY_DISCOUNT", selectedDiscountName = null) => {
   try {
     // Buscar el servicio por nombre
@@ -373,5 +353,51 @@ functions.taskAt8 = async () => {
     console.error('Error al agregar clientes al descuento de jueves:', error);
   }
 };
+
+functions.updateClientOfTheYearDiscount = async () => {
+  try {
+    // Buscar el descuento de "CLIENTE DEL AÑO"
+    const clientOfTheYearDiscount = await Discount.findOne({ name: 'CLIENTE DEL AÑO' });
+    if (!clientOfTheYearDiscount) {
+      console.log('No se encontró el descuento con nombre "CLIENTE DEL AÑO".');
+      return;
+    }
+
+    // Actualizar el campo freeCuts a 1 para el cliente dentro del descuento
+    clientOfTheYearDiscount.customers.forEach(customer => {
+      customer.freeCuts = 10;
+    });
+
+    // Guardar los cambios en el descuento
+    await clientOfTheYearDiscount.save();
+
+    console.log('El descuento "CLIENTE DEL AÑO" ha sido actualizado con un corte gratuito.');
+  } catch (error) {
+    console.error('Error al actualizar el descuento "CLIENTE DEL AÑO":', error);
+  }
+};
+
+functions.hasThursdayFreeCuts = async (customerId) => {
+  try {
+    // Buscar el descuento del jueves
+    const thursdayDiscount = await Discount.findOne({ name: 'DESCUENTO JUEVES' });
+
+    if (!thursdayDiscount) {
+      console.log('No se encontró el descuento con nombre "DESCUENTO JUEVES".');
+      return false;
+    }
+
+    // Verificar si el cliente tiene cortes gratuitos disponibles en el descuento del jueves
+    const customerData = thursdayDiscount.customers.find(c => c.customer.toString() === customerId.toString());
+    if (customerData && customerData.freeCuts > 0) {
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    console.error('Error en hasThursdayFreeCuts:', error);
+    return false;
+  }
+}
 
 module.exports = functions;

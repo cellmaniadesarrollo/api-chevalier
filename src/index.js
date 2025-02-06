@@ -9,7 +9,7 @@ const https = require('https');
 const fs = require('fs'); 
 const WebSocket = require('ws');
 const{ticktockupdate}=require('./Controllers/AppController')
-const {updateBirthdayDiscount, taskAt8, taskAt12}=require('./functions/functions')
+const {updateBirthdayDiscount, taskAt8, taskAt12, updateClientOfTheYearDiscount}=require('./functions/functions')
 const cron = require('node-cron');
 const { env } = require('node:process');
 
@@ -58,6 +58,17 @@ cron.schedule('5 0 * * *', () => {
 cron.schedule('0 8 * * 4', () => {
   console.log('Ejecutando taskAt8 todos los jueves a las 8');
   taskAt8();
+});
+
+// Tarea programada para ejecutarse a medianoche el primer día de cada mes para actualizar el corte gratis del cliente del año
+cron.schedule('4 16 5 * *', async () => {
+  try {
+    console.log('Ejecutando tarea mensual');
+    await updateClientOfTheYearDiscount();
+    console.log('Tarea mensual completada con éxito');
+  } catch (error) {
+    console.error('Error al ejecutar la tarea mensual:', error);
+  }
 });
 
 // cron.schedule('*/10 * * * * *', () => {

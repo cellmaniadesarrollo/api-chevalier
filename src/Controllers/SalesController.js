@@ -31,7 +31,6 @@ SalesController.getnewsalesdata = async (req, res) => {
 SalesController.getnewsalesdiscount = async (req, res) => {
     try {
         const data = await SalesModels.finddiscounts(req.body.find)
-        //console.log(JSON.stringify(data , null, 2))
         res.status(200).json(data);
     } catch (error) {
         console.log(error)

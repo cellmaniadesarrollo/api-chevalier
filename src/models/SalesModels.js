@@ -146,7 +146,7 @@ SalesModels.save = async (data, user) => {
     const hasThursdayDiscount = data.productosservcio.some(item => {
       return item.discountName === 'DESCUENTO JUEVES';
     });
-
+    console.log('hasThursdayDiscount:', hasThursdayDiscount); 
     let skipCounterLogic = false;
 
     if (hasThursdayDiscount) {
@@ -155,7 +155,7 @@ SalesModels.save = async (data, user) => {
       const startOfThursday = new Date(now);
       startOfThursday.setUTCHours(13, 0, 0, 0); //Se debe colocar en horario UTC
       const endOfThursday = new Date(now);
-      endOfThursday.setUTCHours(17, 0, 0, 0); //Se debe colocar en horario UTC
+      endOfThursday.setUTCHours(24, 0, 0, 0); //Se debe colocar en horario UTC
 
       const isWithinValidTimeRange = now >= startOfThursday && now <= endOfThursday;
 
@@ -203,23 +203,41 @@ SalesModels.save = async (data, user) => {
     };
     // Guardar la venta en la base de datos
     const sale = await SalesModeldb.create(saleData);
-
+    // Verifica si el descuento del jueves se ha aplicado
+    
+    console.log('skipCounterLogic:', skipCounterLogic);
     // Si la variable cambia no ejecuta la lógica a continuación
     if (!skipCounterLogic) {
       const consumidorFinal = await functions.isConsumidorFinal(data.cliente);
       const corteGeneral = await functions.hasCorteGeneral(data.productosservcio);
+    
+      if (consumidorFinal) {
+        console.log('el cliente es consumidor final');
+        return;
+      }
+    
+      const freeCuts = await functions.hasFreeCuts(data.cliente);
+      const thursdayFreeCuts = await functions.hasThursdayFreeCuts(data.cliente);
+      console.log("freeCuts", freeCuts);
+      console.log("thursdayFreeCuts", thursdayFreeCuts);
 
-      if (!consumidorFinal && corteGeneral) {
-        const freeCuts = await functions.hasFreeCuts(data.cliente);
+      if (corteGeneral) {
         if (!freeCuts) {
+          await functions.manageHaircutCounter(data.cliente);
+        } else if (thursdayFreeCuts) {
           await functions.manageHaircutCounter(data.cliente);
         } else {
           console.log('el cliente tiene cortes gratis disponibles');
           await functions.applyDiscounts(data);
         }
       } else {
-        console.log('es consumidor final o tiene corte general');
+        console.log(freeCuts ? 'el cliente tiene cortes gratis disponibles' : 'el cliente no tiene cortes gratis disponibles');
+        if (freeCuts) {
+          await functions.applyDiscounts(data);
+        }
       }
+    } else {
+      await functions.applyDiscounts(data);
     }
 
     // Devolver la venta creada

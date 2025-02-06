@@ -74,15 +74,15 @@ AppController.sendemail = async (req, res) => {
 AppController.consultaCortes = async (req, res) => {
   try { 
     
-    console.log('Request body en consultaCortes:', req.body); // Verifica el cuerpo completo de la solicitud
+    // console.log('Request body en consultaCortes:', req.body); // Verifica el cuerpo completo de la solicitud
     const { cedula } = req.body;
 
     // Verifica que la cédula está llegando correctamente
-    console.log('Cédula recibida:', cedula);
+    // console.log('Cédula recibida:', cedula);
     
     // Busca el cliente por DNI
     const cliente = await Clientsdb.findOne({ dni: cedula });
-    console.log('Cliente:', cliente);
+    // console.log('Cliente:', cliente);
 
     if (!cliente) {
       console.log('Cliente no encontrado');
@@ -93,8 +93,8 @@ AppController.consultaCortes = async (req, res) => {
     }
 
     // Imprime los nombres y apellidos del cliente
-    console.log('Nombres del cliente:', cliente.names);
-    console.log('Apellidos del cliente:', cliente.lastNames);
+    // console.log('Nombres del cliente:', cliente.names);
+    // console.log('Apellidos del cliente:', cliente.lastNames);
 
     // Filtrar las ventas que no tienen ningún descuento del jueves
     const validSales = await Sales.find({
@@ -110,7 +110,7 @@ AppController.consultaCortes = async (req, res) => {
     if (discount) {
       const customerDiscount = discount.customers.find(c => c.customer.toString() === cliente._id.toString());
       if (customerDiscount && customerDiscount.freeCuts > 0) {
-        console.log('El cliente tiene un corte gratis con el descuento FIDELITY_DISCOUNT');
+        // console.log('El cliente tiene un corte gratis con el descuento FIDELITY_DISCOUNT');
         // Realiza una consulta en la colección sales para obtener las últimas 5 ventas
         const sales = await Sales.aggregate([
           { $match: { _id: { $in: validSales.map(sale => sale._id) } } },
@@ -183,11 +183,11 @@ AppController.consultaCortes = async (req, res) => {
             }
           }
         ]);
-        if (!sales || sales.length === 0) {
-          console.log('No se encontraron ventas asociadas al cliente:', cliente._id.toHexString());
-        } else {
-          console.log('Ventas del cliente:', sales);
-        }
+        // if (!sales || sales.length === 0) {
+        //   console.log('No se encontraron ventas asociadas al cliente:', cliente._id.toHexString());
+        // } else {
+        //   console.log('Ventas del cliente:', sales);
+        // }
         return res.status(200).json({ 
           success: true, 
           names: cliente.names, 
@@ -217,7 +217,7 @@ AppController.consultaCortes = async (req, res) => {
         sales: [] 
       });
     } else {
-      console.log('Contador de cortes:', haircutCounter.counter);
+      // console.log('Contador de cortes:', haircutCounter.counter);
 
       // Cuenta el número de ventas con el servicio de CORTE GENERAL
       const corteGeneralCount = await Sales.countDocuments({
@@ -323,11 +323,11 @@ AppController.consultaCortes = async (req, res) => {
       }
     ]);
 
-    if (!sales || sales.length === 0) {
-      console.log('No se encontraron ventas asociadas al cliente:', cliente._id.toHexString());
-    } else {
-      console.log('Ventas del cliente:', sales);
-    }
+    // if (!sales || sales.length === 0) {
+    //   console.log('No se encontraron ventas asociadas al cliente:', cliente._id.toHexString());
+    // } else {
+    //   console.log('Ventas del cliente:', sales);
+    // }
     // Aquí puedes agregar la lógica adicional que necesites
     res.status(200).json({ 
       success: true, 
