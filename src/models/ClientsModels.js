@@ -1,11 +1,12 @@
 const ClientsModels = {};
-const Clientsdb = require("../db/clients")
+const Clientsdb = require("../db/clients");
+const Discount = require('../db/discounts');
 const mongoose = require('mongoose');
 const ObjectId = mongoose.Types.ObjectId;
-const { addClientToBirthdayDiscount } = require('../functions/functions')
+const { addClientToBirthdayDiscount } = require('../functions/functions');
+
 ClientsModels.save = async (data, userId) => {
   try {
-
     const nuevoFormulario = new Clientsdb({
       dni: data.cedula,
       names: data.nombres,
@@ -19,6 +20,7 @@ ClientsModels.save = async (data, userId) => {
 
     // Guardamos el nuevo formulario en la base de datos
     const cliente = await nuevoFormulario.save();
+
     // Verificamos si el cumpleaños coincide con la fecha actual
     const today = new Date();
     const birthDate = new Date(data.fechaNacimiento);
@@ -28,13 +30,26 @@ ClientsModels.save = async (data, userId) => {
     ) {
       await addClientToBirthdayDiscount(cliente._id);
     }
-    return cliente._id
-  } catch (error) {
-    console.log(error)
-    throw error
-  }
 
-}
+    // Agregar el nuevo cliente al descuento del jueves con 1 corte gratis
+    const thursdayDiscount = await Discount.findOne({ name: 'DESCUENTO JUEVES' });
+    if (thursdayDiscount) {
+      thursdayDiscount.customers.push({
+        customer: cliente._id,
+        freeCuts: 1,
+      });
+      await thursdayDiscount.save();
+      console.log(`Cliente ${cliente._id} agregado al descuento del jueves con 1 corte gratis.`);
+    } else {
+      console.log('No se encontró el descuento con nombre "DESCUENTO JUEVES".');
+    }
+
+    return cliente._id;
+  } catch (error) {
+    console.log(error);
+    throw error;
+  }
+};
 
 ClientsModels.find = async (query) => {
   try {
