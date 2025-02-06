@@ -142,13 +142,22 @@ SalesModels.getproductservicestypes = async () => {
 }
 SalesModels.save = async (data, user) => {
   try {
+
+    let skipCounterLogic = false;
     // Verificar si la compra tiene al menos un descuento del jueves
     const hasThursdayDiscount = data.productosservcio.some(item => {
       return item.discountName === 'DESCUENTO JUEVES';
     });
+    const hasFidelityDiscount = data.productosservcio.some(item => {
+      return item.discountName === 'FIDELITY_DISCOUNT';
+    });
+    const hasBirthdayDiscount = data.productosservcio.some(item => {
+      return item.discountName === 'BIRTHDAY_DISCOUNT';
+    });
     console.log('hasThursdayDiscount:', hasThursdayDiscount); 
-    let skipCounterLogic = false;
-
+    console.log('hasFidelityDiscount:', hasFidelityDiscount);
+    console.log('hasBirthdayDiscount:', hasBirthdayDiscount);
+    
     if (hasThursdayDiscount) {
       // Verificar si la compra se realizó dentro del rango de tiempo válido
       const now = new Date();
@@ -164,7 +173,8 @@ SalesModels.save = async (data, user) => {
       } else {
         throw new Error('La compra con descuento del jueves está fuera del rango de tiempo permitido.');
       }
-    }
+    } 
+    
 
     // 1. Generar número de orden
     const numberOrder = await Sequential.getSequential("sales");
@@ -216,23 +226,24 @@ SalesModels.save = async (data, user) => {
         return;
       }
     
-      const freeCuts = await functions.hasFreeCuts(data.cliente);
-      const thursdayFreeCuts = await functions.hasThursdayFreeCuts(data.cliente);
-      console.log("freeCuts", freeCuts);
-      console.log("thursdayFreeCuts", thursdayFreeCuts);
-
       if (corteGeneral) {
-        if (!freeCuts) {
+        const fidelityFreecuts = await functions.hasFreeCuts(data.cliente);
+        const thursdayFreeCuts = await functions.hasThursdayFreeCuts(data.cliente);
+        console.log("fidelityFreecuts", fidelityFreecuts);
+        console.log("thursdayFreeCuts", thursdayFreeCuts);
+        if (!fidelityFreecuts && !hasThursdayDiscount && !hasBirthdayDiscount) {
           await functions.manageHaircutCounter(data.cliente);
-        } else if (thursdayFreeCuts) {
+        } else if (thursdayFreeCuts && !hasFidelityDiscount && !hasBirthdayDiscount) {
           await functions.manageHaircutCounter(data.cliente);
         } else {
           console.log('el cliente tiene cortes gratis disponibles');
           await functions.applyDiscounts(data);
         }
       } else {
-        console.log(freeCuts ? 'el cliente tiene cortes gratis disponibles' : 'el cliente no tiene cortes gratis disponibles');
-        if (freeCuts) {
+        const clientOfYearFreeCuts = await functions.hasClientOfYearFreeCuts(data.cliente);
+        console.log("clientOfYearFreeCuts",clientOfYearFreeCuts)
+        console.log(clientOfYearFreeCuts ? 'el cliente tiene cortes gratis disponibles' : 'el cliente no tiene cortes gratis disponibles');
+        if (clientOfYearFreeCuts) {
           await functions.applyDiscounts(data);
         }
       }

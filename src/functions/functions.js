@@ -25,14 +25,15 @@ functions.getSequential = async (data) => {
 
 functions.hasFreeCuts = async (customerId) => {
   try {
-    // Buscar todos los descuentos asociados al cliente
-    const discounts = await Discount.find({
+    // Buscar el descuento de fidelidad
+    const fidelityDiscount = await Discount.findOne({
+      name: 'FIDELITY_DISCOUNT',
       'customers.customer': customerId,
     });
 
-    // Verificar si el cliente tiene cortes gratuitos disponibles en cualquier descuento
-    for (const discount of discounts) {
-      const customerData = discount.customers.find(c => c.customer.toString() === customerId.toString());
+    // Verificar si el cliente tiene cortes gratuitos disponibles en el descuento de fidelidad
+    if (fidelityDiscount) {
+      const customerData = fidelityDiscount.customers.find(c => c.customer.toString() === customerId.toString());
       if (customerData && customerData.freeCuts > 0) {
         return true;
       }
@@ -396,6 +397,29 @@ functions.hasThursdayFreeCuts = async (customerId) => {
     return false;
   } catch (error) {
     console.error('Error en hasThursdayFreeCuts:', error);
+    return false;
+  }
+}
+
+functions.hasClientOfYearFreeCuts = async (customerId) => {
+  try {
+    // Buscar el descuento de "CLIENTE DEL AÑO"
+    const clientOfTheYearDiscount = await Discount.findOne({
+      name: 'CLIENTE DEL AÑO',
+      'customers.customer': customerId,
+    });
+
+    // Verificar si el cliente tiene cortes gratuitos disponibles en el descuento de "CLIENTE DEL AÑO"
+    if (clientOfTheYearDiscount) {
+      const customerData = clientOfTheYearDiscount.customers.find(c => c.customer.toString() === customerId.toString());
+      if (customerData && customerData.freeCuts > 0) {
+        return true;
+      }
+    }
+
+    return false;
+  } catch (error) {
+    console.error('Error en hasClientOfTheYearDiscount:', error);
     return false;
   }
 }
