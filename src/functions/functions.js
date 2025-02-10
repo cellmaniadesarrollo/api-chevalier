@@ -6,7 +6,7 @@ const Client = require('../db/clients');
 const Discount = require("../db/discounts");
 const Service = require('../db/productservices');
 const HaircutCounter = require('../db/haircutcounters');
-
+ 
 functions.getSequential = async (data) => {
     try {
         const counter = await Sequential.findOneAndUpdate(
