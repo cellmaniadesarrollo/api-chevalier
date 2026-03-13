@@ -1,0 +1,274 @@
+ 
+[
+  {
+    "_id": "6843413d5f5f9851b6f23f9d",
+    "barbero": "ALEXANDER MONTALVO",
+    "dias": [
+      {
+        "dia": "DOMINGO - 2025/10/05",
+        "ventas": [
+          {
+            "name": "CORTE Y MASCARILLA NEGRA - 5 - 0% (0 %)",
+            "price": 5,
+            "count": 1,
+            "commissionRate": 45,
+            "discount": 0,
+            "discounttype": "PERCENTAGE"
+          },
+          {
+            "name": "CORTE GENERAL - 3 - 0% (0 %)",
+            "price": 3,
+            "count": 1,
+            "commissionRate": 45,
+            "discount": 0,
+            "discounttype": "PERCENTAGE"
+          },
+          {
+            "name": "PERFILADO DE BARBA - 3 - 0% (0 %)",
+            "price": 3,
+            "count": 1,
+            "commissionRate": 45,
+            "discount": 0,
+            "discounttype": "PERCENTAGE"
+          },
+          {
+            "name": "CORTE GENERAL - 4 - 0% (0 %)",
+            "price": 4,
+            "count": 3,
+            "commissionRate": 45,
+            "discount": 0,
+            "discounttype": "PERCENTAGE"
+          }
+        ]
+      },
+      {
+        "dia": "LUNES - 2025/10/06",
+        "ventas": [
+          {
+            "name": "CORTE GENERAL - 4 - 0% (0 %)",
+            "price": 4,
+            "count": 1,
+            "commissionRate": 45,
+            "discount": 0,
+            "discounttype": "PERCENTAGE"
+          }
+        ]
+      },
+      {
+        "dia": "MARTES - 2025/10/07",
+        "ventas": [
+          {
+            "name": "CORTE GENERAL - 4 - 0% (0 %)",
+            "price": 4,
+            "count": 2,
+            "commissionRate": 45,
+            "discount": 0,
+            "discounttype": "PERCENTAGE"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "_id": "68824e4296107b163e850e00",
+    "barbero": "JAMER ADRIAN",
+    "dias": [
+      {
+        "dia": "DOMINGO - 2025/10/05",
+        "ventas": [
+          {
+            "name": "CORTE Y MASCARILLA NEGRA - 5 - 0% (0 %)",
+            "price": 5,
+            "count": 4,
+            "commissionRate": 45,
+            "discount": 0,
+            "discounttype": "PERCENTAGE"
+          },
+          {
+            "name": "CORTE GENERAL Y BARBA - 8 - 0% (0 %)",
+            "price": 8,
+            "count": 1,
+            "commissionRate": 45,
+            "discount": 0,
+            "discounttype": "PERCENTAGE"
+          },
+          {
+            "name": "CORTE GENERAL Y BARBA - 7 - 0% (0 %)",
+            "price": 7,
+            "count": 1,
+            "commissionRate": 45,
+            "discount": 0,
+            "discounttype": "PERCENTAGE"
+          },
+          {
+            "name": "SOMBREADO CON NAVAJA - 5 - 0% (0 %)",
+            "price": 5,
+            "count": 3,
+            "commissionRate": 45,
+            "discount": 0,
+            "discounttype": "PERCENTAGE"
+          }
+        ]
+      },
+      {
+        "dia": "LUNES - 2025/10/06",
+        "ventas": [
+          {
+            "name": "SOMBREADO DE BARBA - 5 - 0% (0 %)",
+            "price": 5,
+            "count": 7,
+            "commissionRate": 45,
+            "discount": 0,
+            "discounttype": "PERCENTAGE"
+          },
+          {
+            "name": "SOMBREADO CON NAVAJA - 5 - 0% (0 %)",
+            "price": 5,
+            "count": 2,
+            "commissionRate": 45,
+            "discount": 0,
+            "discounttype": "PERCENTAGE"
+          },
+          {
+            "name": "CORTE Y MASCARILLA NEGRA - 5 - 0% (0 %)",
+            "price": 5,
+            "count": 1,
+            "commissionRate": 45,
+            "discount": 0,
+            "discounttype": "PERCENTAGE"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "_id": "689bf1925de4b97068c17b80",
+    "barbero": "ERICK PESANTEZ",
+    "dias": [
+      {
+        "dia": "DOMINGO - 2025/10/05",
+        "ventas": [
+          {
+            "name": "CORTE GENERAL - 4 - 0% (0 %)",
+            "price": 4,
+            "count": 1,
+            "commissionRate": 45,
+            "discount": 0,
+            "discounttype": "PERCENTAGE"
+          },
+          {
+            "name": "PERFILADO DE BARBA - 3 - 0% (0 %)",
+            "price": 3,
+            "count": 4,
+            "commissionRate": 45,
+            "discount": 0,
+            "discounttype": "PERCENTAGE"
+          },
+          {
+            "name": "CORTE GENERAL - 3 - 0% (0 %)",
+            "price": 3,
+            "count": 8,
+            "commissionRate": 45,
+            "discount": 0,
+            "discounttype": "PERCENTAGE"
+          }
+        ]
+      },
+      {
+        "dia": "LUNES - 2025/10/06",
+        "ventas": [
+          {
+            "name": "CORTE GENERAL - 3 - 0% (0 %)",
+            "price": 3,
+            "count": 1,
+            "commissionRate": 45,
+            "discount": 0,
+            "discounttype": "PERCENTAGE"
+          }
+        ]
+      },
+      {
+        "dia": "MARTES - 2025/10/07",
+        "ventas": [
+          {
+            "name": "CORTE GENERAL - 3 - 0% (0 %)",
+            "price": 3,
+            "count": 3,
+            "commissionRate": 45,
+            "discount": 0,
+            "discounttype": "PERCENTAGE"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "_id": "6866dd5fa6eacbc671defe82",
+    "barbero": "ADRIAN PIÑA",
+    "dias": [
+      {
+        "dia": "LUNES - 2025/10/06",
+        "ventas": [
+          {
+            "name": "CORTE Y MASCARILLA NEGRA - 5 - 0% (0 %)",
+            "price": 5,
+            "count": 3,
+            "commissionRate": 45,
+            "discount": 0,
+            "discounttype": "PERCENTAGE"
+          },
+          {
+            "name": "SOMBREADO DE BARBA - 5 - 0% (0 %)",
+            "price": 5,
+            "count": 2,
+            "commissionRate": 45,
+            "discount": 0,
+            "discounttype": "PERCENTAGE"
+          },
+          {
+            "name": "SOMBREADO CON NAVAJA - 5 - 0% (0 %)",
+            "price": 5,
+            "count": 3,
+            "commissionRate": 45,
+            "discount": 0,
+            "discounttype": "PERCENTAGE"
+          },
+          {
+            "name": "CORTE GENERAL Y BARBA - 7 - 0% (0 %)",
+            "price": 7,
+            "count": 1,
+            "commissionRate": 45,
+            "discount": 0,
+            "discounttype": "PERCENTAGE"
+          }
+        ]
+      },
+      {
+        "dia": "MARTES - 2025/10/07",
+        "ventas": [
+          {
+            "name": "SOMBREADO DE BARBA - 5 - 0% (0 %)",
+            "price": 5,
+            "count": 1,
+            "commissionRate": 45,
+            "discount": 0,
+            "discounttype": "PERCENTAGE"
+          }
+        ]
+      },
+      {
+        "dia": "MIÉRCOLES - 2025/10/08",
+        "ventas": [
+          {
+            "name": "CORTE DOS POR UNO - 3 - DESCUETO DOS POR UNO (100 %)",
+            "price": 3,
+            "count": 1,
+            "commissionRate": 45,
+            "discount": 100,
+            "discounttype": "PERCENTAGE"
+          }
+        ]
+      }
+    ]
+  }
+]

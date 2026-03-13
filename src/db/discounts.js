@@ -15,7 +15,7 @@ const discountSchema = new mongoose.Schema({
   },
   discountType: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'discountTypes',  // Referencia a la colección de tipos de descuento
+    ref: 'discounttypes',  // Referencia a la colección de tipos de descuento
     required: true,
   },
   value: {
@@ -35,7 +35,8 @@ const discountSchema = new mongoose.Schema({
     freeCuts: {
       type: Number,
       default: 0, // Número de cortes gratuitos disponibles
-    }}
+    }
+  }
   ],
   productsOrServices: [{
     type: mongoose.Schema.Types.ObjectId,
@@ -48,6 +49,23 @@ const discountSchema = new mongoose.Schema({
   validUntil: {
     type: Date,
     required: true,
+  },
+  main_discount: {
+    type: Boolean,
+    default: true,
+  },
+  collaborators_discount: {
+    type: Boolean,
+    default: true,
+  },
+  daysOfWeek: {
+    type: [Number],
+    enum: [0, 1, 2, 3, 4, 5, 6], // 0 = domingo, 1 = lunes, etc.
+    default: [], // si está vacío, aplica todos los días o ninguno según tu lógica
+  },
+    discount_comission: {
+    type: Boolean,
+    default: true,
   },
 }, {
   timestamps: true,

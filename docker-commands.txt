@@ -1,0 +1,112 @@
+🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟
+      📦 COMANDOS DOCKER ÚTILES 🚀
+🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟🌟
+
+
+✨✨✨✨✨ DESARROLLO ✨✨✨✨✨
+
+🔷 Construir y levantar contenedores (modo desarrollo)  
+🟢 docker compose -f docker-compose.dev.yml up --build
+git pull origin feature/publicacionesFB
+Actualiza la lista de ramas remotas:
+
+bash
+git fetch origin
+Verifica si la rama existe:
+
+bash
+git branch -a
+Si aparece en rojo (remotes/origin/feature/publicacionesFB), existe en GitHub pero no localmente.
+
+Si no aparece, revisa el nombre o si la rama fue subida.
+
+Si la rama ya existe localmente:
+
+bash
+git checkout feature/publicacionesFB
+🔷 Detener contenedores y eliminar redes/volúmenes temporales  
+🟢 docker compose -f docker-compose.dev.yml down
+
+
+
+✨✨✨✨✨ COMANDOS GENERALES ✨✨✨✨✨
+
+🔷 Ver versión de Docker  
+🟢 docker --version
+
+🔷 Probar Docker con contenedor de bienvenida  
+🟢 docker run hello-world
+
+
+
+✨✨✨✨✨ SOLUCIÓN DE ERRORES ✨✨✨✨✨
+
+🔷 Si el puerto 5000 está ocupado:
+
+   🔸 Buscar el proceso que usa el puerto:  
+   🟢 netstat -ano | findstr :5000
+
+   🔸 Terminar el proceso (reemplaza `<PID>` con el valor mostrado):  
+   🟢 taskkill /PID <PID> /F
+
+
+
+✨✨✨✨✨ PRODUCCIÓN ✨✨✨✨✨
+
+🔷 Construir imagen de producción  
+🟢 sudo docker build -t <nombre_imagen> .
+
+🔷 Ejecutar imagen en modo producción (puerto 5000)  
+🟢 docker run -p 5000:5000 --name <nombre_contenedor> <nombre_imagen>
+
+🔷 Ejecutar con reinicio automático  
+🟢 docker run -d -p 5000:5000 --name <nombre_contenedor> --restart always <nombre_imagen>
+
+
+
+✨✨✨✨✨ ACTUALIZACIÓN DE CONTENEDORES ✨✨✨✨✨
+
+🔷 Detener el contenedor actual  
+🟢 sudo docker stop <nombre_contenedor>
+
+🔷 Eliminar el contenedor viejo  
+🟢 sudo docker rm <nombre_contenedor>
+
+🔷 Reconstruir la imagen con los nuevos cambios  
+🟢 sudo docker build -t <nombre_imagen> .
+
+🔷 Ejecutar nuevamente con reinicio automático  
+🟢 sudo docker run -d -p 5000:5000 --name <nombre_contenedor> --restart always <nombre_imagen>
+
+
+
+✨✨✨✨✨ INSPECCIÓN Y MONITOREO ✨✨✨✨✨
+
+🔷 Listar todos los contenedores (activos e inactivos)  
+🟢 docker ps -a
+
+🔷 Ver logs en tiempo real de un contenedor  
+🟢 sudo docker logs -f <nombre_contenedor>
+
+🔷 Ver logs con timestamps y colores (requiere `less`)  
+🟢 sudo docker logs --tail=100 --timestamps --follow <nombre_contenedor>
+
+🔷 Ver logs de todos los contenedores activos  
+🟢 sudo docker ps -q | xargs -L 1 sudo docker logs -f
+
+✨✨✨✨✨ BUENAS PRÁCTICAS DE NOMENCLATURA ✨✨✨✨✨
+
+🔷 Puedes elegir libremente los nombres de tus imágenes (<nombre_imagen>) y contenedores (<nombre_contenedor>).  
+🟢Solo asegúrate de usar los mismos nombres de forma coherente en todos los comandos relacionados (docker run, stop, rm, etc.).
+
+🔷 Evita lo siguiente:
+🟢 Usar espacios o caracteres especiales en los nombres  
+🟢 Reutilizar el mismo nombre para distintos contenedores sin eliminarlos antes  
+🟢 Cambiar un nombre y olvidarlo en otros comandos
+
+🔷 Recomendación de nombres claros y organizados:
+🟢Solo Para imágenes:      api-node, webapp-v2  
+🟢 Para contenedores:  api-dev, api-prod  
+
+🔷 Pro tip 💡
+🟢 Incluye el entorno (dev, prod, test) en el nombre del contenedor para identificarlo fácilmente

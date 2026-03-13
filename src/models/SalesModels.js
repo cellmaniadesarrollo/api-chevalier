@@ -10,8 +10,9 @@ const PaymentDetailsModel = require("../db/paymentDetails");
 const SalesModeldb = require("../db/sales");
 const productservicestypes = require("../db/productservicestypes");
 const ProductService = require('../db/productservices');
+const ProductBatchModel = require('../db/productbatch');
 const functions = require('../functions/functions');
-const now = new Date();
+
 
 SalesModels.findpaymentMethods = async () => {
   return await paymentMethods.aggregate([
@@ -35,6 +36,7 @@ SalesModels.finddiscounts = async (clientId) => {
     if (typeof clientId !== 'string') {
       throw new Error('clientId debe ser un string');
     }
+    const now = new Date();
     const pipeline = [
       {
         $match: {
@@ -57,7 +59,7 @@ SalesModels.finddiscounts = async (clientId) => {
           ],
         },
       },
-      
+
       {
         $lookup: {
           from: 'discounttypes',  // Referencia a la colección de tipos de descuento
@@ -88,6 +90,12 @@ SalesModels.finddiscounts = async (clientId) => {
           value: 1,
           isGlobal: 1,
           discountType: '$discountTypeDetails.name',  // Tipo de descuento (PERCENTAGE o FIXED)
+          collaborators_discount: {
+            $ifNull: ['$collaborators_discount', true] // true como valor por defecto
+          },
+          main_discount: {
+            $ifNull: ['$main_discount', true] // true como valor por defecto
+          },
           productsOrServices: {
             $map: {
               input: '$productsOrServicesDetails',
@@ -103,7 +111,7 @@ SalesModels.finddiscounts = async (clientId) => {
     ];
 
     const discounts = await DiscountModel.aggregate(pipeline);
-    //console.log(discounts)
+    // console.log(discounts)
     return discounts;
 
   } catch (error) {
@@ -143,38 +151,6 @@ SalesModels.getproductservicestypes = async () => {
 SalesModels.save = async (data, user) => {
   try {
 
-    let skipCounterLogic = false;
-    // Verificar si la compra tiene al menos un descuento del jueves
-    const hasThursdayDiscount = data.productosservcio.some(item => {
-      return item.discountName === 'DESCUENTO JUEVES';
-    });
-    const hasFidelityDiscount = data.productosservcio.some(item => {
-      return item.discountName === 'FIDELITY_DISCOUNT';
-    });
-    const hasBirthdayDiscount = data.productosservcio.some(item => {
-      return item.discountName === 'BIRTHDAY_DISCOUNT';
-    });
-    console.log('hasThursdayDiscount:', hasThursdayDiscount); 
-    console.log('hasFidelityDiscount:', hasFidelityDiscount);
-    console.log('hasBirthdayDiscount:', hasBirthdayDiscount);
-    
-    if (hasThursdayDiscount) {
-      // Verificar si la compra se realizó dentro del rango de tiempo válido
-      const now = new Date();
-      const startOfThursday = new Date(now);
-      startOfThursday.setUTCHours(13, 0, 0, 0); //Se debe colocar en horario UTC
-      const endOfThursday = new Date(now);
-      endOfThursday.setUTCHours(24, 0, 0, 0); //Se debe colocar en horario UTC
-
-      const isWithinValidTimeRange = now >= startOfThursday && now <= endOfThursday;
-
-      if (isWithinValidTimeRange) {
-        skipCounterLogic = true;
-      } else {
-        throw new Error('La compra con descuento del jueves está fuera del rango de tiempo permitido.');
-      }
-    } 
-    
 
     // 1. Generar número de orden
     const numberOrder = await Sequential.getSequential("sales");
@@ -189,68 +165,97 @@ SalesModels.save = async (data, user) => {
       transferNumber: data.numeroTransferencia || null
     };
 
-    // Guardar detalles de pago en la base de datos
+    // 1. Crear los detalles de pago
     const paymentDetails = await PaymentDetailsModel.create(paymentDetailsData);
 
-    // 3. Crear productos o servicios
-    const productsOrServices = data.productosservcio.map(item => ({
-      item: item._id,
-      price: item.price,
-      discount: item.discount
-    }));
+    const productsOrServices = await Promise.all(
+      data.productosservcio.map(async (item) => {
+        // Validar producto o servicio
+        const validated = await getValidatedProductOrService(item);
+        const productService = await ProductService.findById(item._id).lean();
+
+        if (!productService) {
+          throw new Error(`El producto o servicio con ID ${item._id} no existe.`);
+        }
+
+        // Obtener colaboradores seleccionados del frontend
+        const colaboradores = item.colaboradoresSeleccionados || [];
+
+        // 🔹 Validación 1: ¿permite colaboradores?
+        if (productService.collaborators === 0 && colaboradores.length > 0) {
+          throw new Error(`El servicio "${productService.name}" no permite colaboradores.`);
+        }
+
+        // 🔹 Validación 2: ¿no supera el máximo permitido?
+        if (productService.collaborators > 0 && colaboradores.length > productService.collaborators) {
+          throw new Error(
+            `El servicio "${productService.name}" permite máximo ${productService.collaborators} colaborador(es).`
+          );
+        }
+
+        // 🔹 Mapear los colaboradores si todo está correcto
+        const collaborators = colaboradores.map(col => ({
+          barber: col.barbero._id,
+          value: col.valor
+        }));
+
+        return {
+          ...validated,
+          collaborators
+        };
+      })
+    );
+
+    // 3. Validar stock de lotes
+    for (const item of productsOrServices) {
+      if (item.batch) {
+        const batch = await ProductBatchModel.findById(item.batch);
+        if (!batch || batch.quantity < item.quantity) {
+          // Eliminar detalles de pago si falla la validación
+          await PaymentDetailsModel.findByIdAndDelete(paymentDetails._id);
+          throw new Error(`Stock insuficiente en el lote ${batch?.lotNumber || item.batch}`);
+        }
+      }
+    }
 
     // 4. Crear el documento de venta
     const saleData = {
-      client: data.cliente, // Asigna el cliente desde data
-      barber: data.barbero, // Asigna el barbero desde data
-      cashier: user._id, // Asigna el usuario (cajero) desde el parámetro user
-      paymentDetails: paymentDetails._id, // Asigna el ID de los detalles de pago creados
-      discount: data.descuento ? data.descuento : null, // Asigna el descuento si existe
-      productsOrServices: productsOrServices, // Lista de productos o servicios
-      saleNumber: numberOrder, // Número de orden generado por Sequential 
+      client: data.cliente,
+      barber: data.barbero,
+      cashier: user._id,
+      paymentDetails: paymentDetails._id,
+      discount: data.descuento || null,
+      productsOrServices,
+      saleNumber: numberOrder,
       dailyBarberSaleNumber: await getDailyBarberSaleNumber(data.barbero),
-      observations: data.observaciones || '' // Asigna observaciones o cadena vacía
+      observations: data.observaciones || ''
     };
-    // Guardar la venta en la base de datos
+
+    // 5. Guardar la venta
+
     const sale = await SalesModeldb.create(saleData);
-    // Verifica si el descuento del jueves se ha aplicado
-    
-    console.log('skipCounterLogic:', skipCounterLogic);
-    // Si la variable cambia no ejecuta la lógica a continuación
-    if (!skipCounterLogic) {
-      const consumidorFinal = await functions.isConsumidorFinal(data.cliente);
-      const corteGeneral = await functions.hasCorteGeneral(data.productosservcio);
-    
-      if (consumidorFinal) {
-        console.log('el cliente es consumidor final');
-        return;
+
+    // 6. Actualizar el stock de los lotes
+    for (const item of productsOrServices) {
+      if (item.batch) {
+        await ProductBatchModel.updateOne(
+          { _id: item.batch },
+          { $inc: { quantity: -item.quantity } }
+        );
       }
-    
-      if (corteGeneral) {
-        const fidelityFreecuts = await functions.hasFreeCuts(data.cliente);
-        const thursdayFreeCuts = await functions.hasThursdayFreeCuts(data.cliente);
-        console.log("fidelityFreecuts", fidelityFreecuts);
-        console.log("thursdayFreeCuts", thursdayFreeCuts);
-        if (!fidelityFreecuts && !hasThursdayDiscount && !hasBirthdayDiscount) {
-          await functions.manageHaircutCounter(data.cliente);
-        } else if (thursdayFreeCuts && !hasFidelityDiscount && !hasBirthdayDiscount) {
-          await functions.manageHaircutCounter(data.cliente);
-        } else {
-          console.log('el cliente tiene cortes gratis disponibles');
-          await functions.applyDiscounts(data);
-        }
-      } else {
-        const clientOfYearFreeCuts = await functions.hasClientOfYearFreeCuts(data.cliente);
-        console.log("clientOfYearFreeCuts",clientOfYearFreeCuts)
-        console.log(clientOfYearFreeCuts ? 'el cliente tiene cortes gratis disponibles' : 'el cliente no tiene cortes gratis disponibles');
-        if (clientOfYearFreeCuts) {
-          await functions.applyDiscounts(data);
-        }
-      }
-    } else {
-      await functions.applyDiscounts(data);
     }
 
+    const consumidorFinal = await functions.isConsumidorFinal(data.cliente);
+    if (consumidorFinal) {
+      return sale;
+    }
+    const clientOfYearFreeCuts = await functions.hasClientOfYearFreeCuts(data.cliente);
+    if (!clientOfYearFreeCuts) {
+
+      await processItemsParallel(productsOrServices, data)
+    }
+
+    await functions.applyDiscounts(data);
     // Devolver la venta creada
     return sale;
 
@@ -350,6 +355,7 @@ SalesModels.list = async (data) => {
           saleDate: 1,
           "productDetails.type": 1,
           productService: "$productDetails.name",
+          quantity: "$productsOrServices.quantity",
           type: "$productTypeDetails.name", // Mostrar el nombre del tipo
           total: "$productsOrServices.price",
           client: {
@@ -380,7 +386,6 @@ SalesModels.list = async (data) => {
       limit,
       products: productsList[0].products
     };
-
     return result;
   } catch (error) {
     console.error("Error obteniendo lista de ventas:", error);
@@ -388,7 +393,7 @@ SalesModels.list = async (data) => {
   }
 }
 
-SalesModels.reports = async (Datedata, barberId = null) => {
+SalesModels.reports = async (Datedata, barberId = null, tipoproducto) => {
   try {
     const matchStage = {};
 
@@ -405,13 +410,10 @@ SalesModels.reports = async (Datedata, barberId = null) => {
       };
 
       const result = await SalesModeldb.aggregate([
-        // Filtro de intervalo de fechas y barbero
         { $match: matchStage },
 
-        // Unwind para aplanar el arreglo de productsOrServices
         { $unwind: "$productsOrServices" },
 
-        // Realizamos el lookup y unwind para obtener los detalles de los productos y servicios
         {
           $lookup: {
             from: "productservices",
@@ -431,29 +433,28 @@ SalesModels.reports = async (Datedata, barberId = null) => {
         },
         { $unwind: "$serviceType" },
 
-        // Calcula el precio considerando si productsOrServices.price es un arreglo
+        // Calcular el precio total (price * quantity)
         {
           $addFields: {
-            price: {
+            priceTotal: {
               $cond: {
                 if: { $isArray: "$productsOrServices.price" },
-                then: { $sum: "$productsOrServices.price" },
-                else: "$productsOrServices.price"
+                then: { $multiply: [{ $sum: "$productsOrServices.price" }, "$productsOrServices.quantity"] },
+                else: { $multiply: ["$productsOrServices.price", "$productsOrServices.quantity"] }
               }
-            }
+            },
+            quantity: "$productsOrServices.quantity"
           }
         },
 
-        // Usamos $facet para dividir en dos facetas: resumen total y reporte de servicios
         {
           $facet: {
-            // Faceta para el resumen total
             resumenIngresos: [
               {
                 $group: {
                   _id: null,
-                  ingresoTotal: { $sum: "$price" },
-                  contador: { $sum: 1 } // Contador total de documentos
+                  ingresoTotal: { $sum: "$priceTotal" },
+                  contador: { $sum: "$quantity" } // Cantidad total vendida
                 }
               },
               {
@@ -461,19 +462,18 @@ SalesModels.reports = async (Datedata, barberId = null) => {
                   _id: 0,
                   resumenIngresos: {
                     ingresoTotal: "$ingresoTotal",
-                    countTotal: "$contador" // Incluimos el contador
+                    countTotal: "$contador"
                   }
                 }
               }
             ],
 
-            // Faceta para el desglose de servicios
             serviciosreportes: [
               {
                 $group: {
-                  _id: "$productservice.name", // Agrupa por nombre de servicio
-                  ingresoTotal: { $sum: "$price" },
-                  contador: { $sum: 1 } // Contador de documentos por servicio
+                  _id: "$productservice.name",
+                  ingresoTotal: { $sum: "$priceTotal" },
+                  contador: { $sum: "$quantity" } // Cantidad total por servicio
                 }
               },
               {
@@ -481,7 +481,7 @@ SalesModels.reports = async (Datedata, barberId = null) => {
                   _id: 0,
                   servicio: "$_id",
                   ingresoTotal: "$ingresoTotal",
-                  countTotal: "$contador" // Incluimos el contador
+                  countTotal: "$contador"
                 }
               }
             ]
@@ -492,8 +492,6 @@ SalesModels.reports = async (Datedata, barberId = null) => {
       return result[0];
     }
     else {
-
-
       // Calculamos el último domingo y el próximo sábado desde la fecha actual 
       const fiveHoursAgo = new Date(new Date().getTime() - 5 * 60 * 60 * 1000);
       const dayOfWeek = fiveHoursAgo.getUTCDay(); // 0 (domingo) a 6 (sábado)
@@ -505,18 +503,11 @@ SalesModels.reports = async (Datedata, barberId = null) => {
       nextSaturday.setUTCDate(lastSunday.getUTCDate() + 6); // Avanza 6 días al próximo sábado
       nextSaturday.setUTCHours(23, 59, 59, 999); // Ajusta a final del día
 
-
-      // Calcula la fecha y hora actual restando 5 horas
-
-
       const result = await SalesModeldb.aggregate([
-        // Filtro de intervalo de fechas y barbero
         { $match: matchStage },
 
-        // Unwind para aplanar el arreglo de productsOrServices
         { $unwind: "$productsOrServices" },
 
-        // Realizamos el lookup y unwind para obtener los detalles de los productos y servicios
         {
           $lookup: {
             from: "productservices",
@@ -531,28 +522,32 @@ SalesModels.reports = async (Datedata, barberId = null) => {
             from: "productservicestypes",
             localField: "productservice.type",
             foreignField: "_id",
+            pipeline: [
+              {
+                $match: { name: tipoproducto }
+              }
+
+            ],
             as: "serviceType"
           }
         },
         { $unwind: "$serviceType" },
 
-        // Calcula el precio considerando si productsOrServices.price es un arreglo
         {
           $addFields: {
-            price: {
+            priceTotal: {
               $cond: {
                 if: { $isArray: "$productsOrServices.price" },
-                then: { $sum: "$productsOrServices.price" },
-                else: "$productsOrServices.price"
+                then: { $multiply: [{ $sum: "$productsOrServices.price" }, "$productsOrServices.quantity"] },
+                else: { $multiply: ["$productsOrServices.price", "$productsOrServices.quantity"] }
               }
-            }
+            },
+            quantity: "$productsOrServices.quantity"
           }
         },
 
-        // Usamos $facet para dividir en dos facetas: resumen total y reporte de servicios
         {
           $facet: {
-            // Faceta para el resumen total
             resumenIngresos: [
               {
                 $group: {
@@ -566,7 +561,7 @@ SalesModels.reports = async (Datedata, barberId = null) => {
                             { $dateToString: { format: "%Y-%m-%d", date: fiveHoursAgo } }
                           ]
                         },
-                        "$price",
+                        "$priceTotal",
                         0
                       ]
                     }
@@ -580,7 +575,7 @@ SalesModels.reports = async (Datedata, barberId = null) => {
                             { $dateToString: { format: "%Y-%m-%d", date: fiveHoursAgo } }
                           ]
                         },
-                        1,
+                        "$quantity",
                         0
                       ]
                     }
@@ -591,13 +586,13 @@ SalesModels.reports = async (Datedata, barberId = null) => {
                         {
                           $and: [
                             { $gte: ["$saleDate", lastSunday] },
-                            { $lte: ["$saleDate", nextSaturday] },
-                          ],
+                            { $lte: ["$saleDate", nextSaturday] }
+                          ]
                         },
-                        "$price",
-                        0,
-                      ],
-                    },
+                        "$priceTotal",
+                        0
+                      ]
+                    }
                   },
                   countSemana: {
                     $sum: {
@@ -605,13 +600,13 @@ SalesModels.reports = async (Datedata, barberId = null) => {
                         {
                           $and: [
                             { $gte: ["$saleDate", lastSunday] },
-                            { $lte: ["$saleDate", nextSaturday] },
-                          ],
+                            { $lte: ["$saleDate", nextSaturday] }
+                          ]
                         },
-                        1,
-                        0,
-                      ],
-                    },
+                        "$quantity",
+                        0
+                      ]
+                    }
                   },
                   totalMes: {
                     $sum: {
@@ -622,7 +617,7 @@ SalesModels.reports = async (Datedata, barberId = null) => {
                             { $dateToString: { format: "%Y-%m", date: fiveHoursAgo } }
                           ]
                         },
-                        "$price",
+                        "$priceTotal",
                         0
                       ]
                     }
@@ -636,7 +631,7 @@ SalesModels.reports = async (Datedata, barberId = null) => {
                             { $dateToString: { format: "%Y-%m", date: fiveHoursAgo } }
                           ]
                         },
-                        1,
+                        "$quantity",
                         0
                       ]
                     }
@@ -650,7 +645,7 @@ SalesModels.reports = async (Datedata, barberId = null) => {
                             { $year: fiveHoursAgo }
                           ]
                         },
-                        "$price",
+                        "$priceTotal",
                         0
                       ]
                     }
@@ -664,7 +659,7 @@ SalesModels.reports = async (Datedata, barberId = null) => {
                             { $year: fiveHoursAgo }
                           ]
                         },
-                        1,
+                        "$quantity",
                         0
                       ]
                     }
@@ -688,11 +683,10 @@ SalesModels.reports = async (Datedata, barberId = null) => {
               }
             ],
 
-            // Faceta para el desglose de servicios
             serviciosreportes: [
               {
                 $group: {
-                  _id: "$productservice.name",  // Agrupa por nombre de servicio 
+                  _id: "$productservice.name",
                   totalHoy: {
                     $sum: {
                       $cond: [
@@ -702,7 +696,7 @@ SalesModels.reports = async (Datedata, barberId = null) => {
                             { $dateToString: { format: "%Y-%m-%d", date: fiveHoursAgo } }
                           ]
                         },
-                        "$price",
+                        "$priceTotal",
                         0
                       ]
                     }
@@ -716,7 +710,7 @@ SalesModels.reports = async (Datedata, barberId = null) => {
                             { $dateToString: { format: "%Y-%m-%d", date: fiveHoursAgo } }
                           ]
                         },
-                        1,
+                        "$quantity",
                         0
                       ]
                     }
@@ -727,13 +721,13 @@ SalesModels.reports = async (Datedata, barberId = null) => {
                         {
                           $and: [
                             { $gte: ["$saleDate", lastSunday] },
-                            { $lte: ["$saleDate", nextSaturday] },
-                          ],
+                            { $lte: ["$saleDate", nextSaturday] }
+                          ]
                         },
-                        "$price",
-                        0,
-                      ],
-                    },
+                        "$priceTotal",
+                        0
+                      ]
+                    }
                   },
                   countSemana: {
                     $sum: {
@@ -741,13 +735,13 @@ SalesModels.reports = async (Datedata, barberId = null) => {
                         {
                           $and: [
                             { $gte: ["$saleDate", lastSunday] },
-                            { $lte: ["$saleDate", nextSaturday] },
-                          ],
+                            { $lte: ["$saleDate", nextSaturday] }
+                          ]
                         },
-                        1,
-                        0,
-                      ],
-                    },
+                        "$quantity",
+                        0
+                      ]
+                    }
                   },
                   totalMes: {
                     $sum: {
@@ -758,7 +752,7 @@ SalesModels.reports = async (Datedata, barberId = null) => {
                             { $dateToString: { format: "%Y-%m", date: fiveHoursAgo } }
                           ]
                         },
-                        "$price",
+                        "$priceTotal",
                         0
                       ]
                     }
@@ -772,7 +766,7 @@ SalesModels.reports = async (Datedata, barberId = null) => {
                             { $dateToString: { format: "%Y-%m", date: fiveHoursAgo } }
                           ]
                         },
-                        1,
+                        "$quantity",
                         0
                       ]
                     }
@@ -786,7 +780,7 @@ SalesModels.reports = async (Datedata, barberId = null) => {
                             { $year: fiveHoursAgo }
                           ]
                         },
-                        "$price",
+                        "$priceTotal",
                         0
                       ]
                     }
@@ -800,7 +794,7 @@ SalesModels.reports = async (Datedata, barberId = null) => {
                             { $year: fiveHoursAgo }
                           ]
                         },
-                        1,
+                        "$quantity",
                         0
                       ]
                     }
@@ -828,6 +822,7 @@ SalesModels.reports = async (Datedata, barberId = null) => {
 
       return result[0];
     }
+
 
   } catch (error) {
     throw error
@@ -888,24 +883,142 @@ SalesModels.finddocument = async (data) => {
         }
       },
       // Lookup para obtener los datos de productos o servicios
-      {
-        $unwind: "$productsOrServices"
-      },
+      // 🔹 Explode productsOrServices
+      { $unwind: "$productsOrServices" },
+
+      // 🔹 Join con el producto
       {
         $lookup: {
-          from: 'productservices',
-          localField: 'productsOrServices.item',
-          foreignField: '_id',
-          as: 'productDetails'
+          from: "productservices",
+          localField: "productsOrServices.item",
+          foreignField: "_id",
+          as: "productDetails"
         }
       },
       {
         $addFields: {
-          "productsOrServices.productName": {
-            $arrayElemAt: ["$productDetails.name", 0]
+          "productsOrServices.productName": { $arrayElemAt: ["$productDetails.name", 0] }
+        }
+      },
+
+      // 🔹 Lookup con descuento aplicado a ese producto
+      {
+        $lookup: {
+          from: "discounts",
+          localField: "productsOrServices.discount",
+          foreignField: "_id",
+          as: "discountDetails"
+        }
+      },
+      { $unwind: { path: "$discountDetails", preserveNullAndEmptyArrays: true } },
+
+      // 🔹 Lookup con tipo de descuento
+      {
+        $lookup: {
+          from: "discounttypes",
+          localField: "discountDetails.discountType",
+          foreignField: "_id",
+          as: "discountTypeDetails"
+        }
+      },
+      { $unwind: { path: "$discountTypeDetails", preserveNullAndEmptyArrays: true } },
+
+      // 🔹 Agregar descuento dentro de cada productOrService
+      // Agregar detalles de descuento al producto
+      {
+        $addFields: {
+          "productsOrServices.discountDetails": {
+            value: "$discountDetails.value",
+            type: "$discountTypeDetails.name",
+
+            name: "$discountDetails.name",
+            collaborators_discount: {
+              $ifNull: ["$discountDetails.collaborators_discount", true]
+            },
+            main_discount: {
+              $ifNull: ["$discountDetails.main_discount", true]
+            }
           }
         }
       },
+      //colaboradores
+
+      // Enriquecer los colaboradores con sus nombres
+      {
+        $lookup: {
+          from: "users",
+          let: { collaborators: { $ifNull: ["$productsOrServices.collaborators", []] } },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $in: [
+                    "$_id",
+                    {
+                      $ifNull: [
+                        {
+                          $map: {
+                            input: { $ifNull: ["$$collaborators", []] },
+                            as: "c",
+                            in: "$$c.barber"
+                          }
+                        },
+                        []
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              $lookup: {
+                from: "personaldatas",
+                localField: "personalData",
+                foreignField: "_id",
+                as: "personalInfo"
+              }
+            },
+            {
+              $project: {
+                _id: 1,
+                firstname: { $arrayElemAt: ["$personalInfo.firstnames", 0] },
+                lastname: { $arrayElemAt: ["$personalInfo.lastnames", 0] }
+              }
+            }
+          ],
+          as: "collaboratorsInfo"
+        }
+      },
+      // Combinar los datos originales de colaboradores con los nombres
+      {
+        $addFields: {
+          "productsOrServices.collaborators": {
+            $map: {
+              input: { $ifNull: ["$productsOrServices.collaborators", []] },
+              as: "col",
+              in: {
+                $mergeObjects: [
+                  "$$col",
+                  {
+                    $arrayElemAt: [
+                      {
+                        $filter: {
+                          input: "$collaboratorsInfo",
+                          as: "info",
+                          cond: { $eq: ["$$info._id", "$$col.barber"] }
+                        }
+                      },
+                      0
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+
+      // --- Reagrupar ---
       {
         $group: {
           _id: "$_id",
@@ -932,77 +1045,43 @@ SalesModels.finddocument = async (data) => {
               lastname: { $arrayElemAt: ["$cashierPersonalData.lastnames", 0] },
             }
           },
-          productsOrServices: {
-            $push: {
-              item: "$productsOrServices.item",
-              price: "$productsOrServices.price",
-              productName: "$productsOrServices.productName"
-            }
-          },
-          discount: { $first: "$discount" },
+          productsOrServices: { $push: "$productsOrServices" },
           paymentDetails: { $first: "$paymentDetails" }
         }
       },
-      // Lookup para obtener los datos del descuento
+
+      // --- payment lookups igual que antes ---
       {
         $lookup: {
-          from: 'discounts',
-          localField: 'discount',
-          foreignField: '_id',
-          as: 'discountDetails'
+          from: "paymentdetails",
+          localField: "paymentDetails",
+          foreignField: "_id",
+          as: "paymentDetailsInfo"
         }
       },
-      // Lookup para obtener el tipo de descuento
       {
         $lookup: {
-          from: 'discounttypes',
-          localField: 'discountDetails.discountType',
-          foreignField: '_id',
-          as: 'discountTypeDetails'
+          from: "paymentmethods",
+          localField: "paymentDetailsInfo.paymentMethod",
+          foreignField: "_id",
+          as: "paymentMethodDetails"
         }
       },
-      // Lookup para obtener los detalles del pago
-      {
-        $lookup: {
-          from: 'paymentdetails',
-          localField: 'paymentDetails',
-          foreignField: '_id',
-          as: 'paymentDetailsInfo'
-        }
-      },
-      // Lookup para obtener el método de pago
-      {
-        $lookup: {
-          from: 'paymentmethods',
-          localField: 'paymentDetailsInfo.paymentMethod',
-          foreignField: '_id',
-          as: 'paymentMethodDetails'
-        }
-      },
-      // Proyección final
+
+      // --- Proyección final ---
       {
         $project: {
           saleNumber: 1,
           dailyBarberSaleNumber: 1,
           saleDate: {
-            $dateToString: {
-              format: "%Y-%m-%d %H:%M:%S",
-              date: "$saleDate"
-            }
+            $dateToString: { format: "%Y-%m-%d %H:%M:%S", date: "$saleDate" }
           },
           observations: 1,
           client: 1,
           barber: 1,
           cashier: 1,
-
           productsOrServices: 1,
-          discount: {
-            value: { $arrayElemAt: ["$discountDetails.value", 0] },
-            type: { $arrayElemAt: ["$discountTypeDetails.name", 0] }
-          },
-          paymentMethod: {
-            name: { $arrayElemAt: ["$paymentMethodDetails.name", 0] }
-          }
+          paymentMethod: { name: { $arrayElemAt: ["$paymentMethodDetails.name", 0] } }
         }
       }
     ]);
@@ -1116,10 +1195,93 @@ SalesModels.get5sales = async () => {
         $addFields: {
           "productsOrServices.discountDetails": {
             value: "$discountDetails.value",
-            type: "$discountTypeDetails.name"
+            type: "$discountTypeDetails.name",
+            collaborators_discount: {
+              $ifNull: ["$discountDetails.collaborators_discount", true]
+            },
+            main_discount: {
+              $ifNull: ["$discountDetails.main_discount", true]
+            }
           }
         }
       },
+      //colaboradores
+
+      // Enriquecer los colaboradores con sus nombres
+      {
+        $lookup: {
+          from: "users",
+          let: { collaborators: { $ifNull: ["$productsOrServices.collaborators", []] } },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $in: [
+                    "$_id",
+                    {
+                      $ifNull: [
+                        {
+                          $map: {
+                            input: { $ifNull: ["$$collaborators", []] },
+                            as: "c",
+                            in: "$$c.barber"
+                          }
+                        },
+                        []
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              $lookup: {
+                from: "personaldatas",
+                localField: "personalData",
+                foreignField: "_id",
+                as: "personalInfo"
+              }
+            },
+            {
+              $project: {
+                _id: 1,
+                firstname: { $arrayElemAt: ["$personalInfo.firstnames", 0] },
+                lastname: { $arrayElemAt: ["$personalInfo.lastnames", 0] }
+              }
+            }
+          ],
+          as: "collaboratorsInfo"
+        }
+      },
+      // Combinar los datos originales de colaboradores con los nombres
+      {
+        $addFields: {
+          "productsOrServices.collaborators": {
+            $map: {
+              input: { $ifNull: ["$productsOrServices.collaborators", []] },
+              as: "col",
+              in: {
+                $mergeObjects: [
+                  "$$col",
+                  {
+                    $arrayElemAt: [
+                      {
+                        $filter: {
+                          input: "$collaboratorsInfo",
+                          as: "info",
+                          cond: { $eq: ["$$info._id", "$$col.barber"] }
+                        }
+                      },
+                      0
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+
       // Agrupar los datos por venta
       {
         $group: {
@@ -1148,10 +1310,12 @@ SalesModels.get5sales = async () => {
           },
           productsOrServices: {
             $push: {
+              quantity: "$productsOrServices.quantity",
               item: "$productsOrServices.item",
               price: "$productsOrServices.price",
               productName: "$productsOrServices.productName",
-              discountDetails: "$productsOrServices.discountDetails"
+              discountDetails: "$productsOrServices.discountDetails",
+              collaborators: "$productsOrServices.collaborators"
             }
           },
           paymentDetails: { $first: "$paymentDetails" }
@@ -1180,12 +1344,7 @@ SalesModels.get5sales = async () => {
       {
         $project: {
           saleNumber: 1,
-          saleDate: {
-            $dateToString: {
-              format: "%Y-%m-%d %H:%M:%S",
-              date: "$saleDate"
-            }
-          },
+          saleDate: 1,
           observations: 1,
           client: 1,
           barber: 1,
@@ -1218,7 +1377,7 @@ const fonts = require("../pdf/fonts"); // Ruta a tu archivo de fuentes
 const styles = require("../pdf/styles"); // Ruta a tu archivo de estilos
 const { defaultStyle } = require("../pdf/pdfContent"); // Ruta a tu archivo de estilos predeterminados
 
-SalesModels.reportspdfresumen = async (data, fecha = null, barbero = null) => {
+SalesModels.reportspdfresumen = async (data, fecha = null, barbero = null, tipodeinforme) => {
   //await assignDefaultDailySaleNumber(0)
   if (fecha) {
     fecha = "Del " + formatearFecha(fecha.start) + " al " + formatearFecha(fecha.end)
@@ -1359,7 +1518,7 @@ SalesModels.reportspdfresumen = async (data, fecha = null, barbero = null) => {
       };
     },
     content: [
-      { text: "Reporte de Servicios", style: "invoiceTitle", alignment: "center", width: "*" },
+      { text: `Reporte de ${tipodeinforme}`, style: "invoiceTitle", alignment: "center", width: "*" },
       { text: `${barbero}`, style: "subTitle", alignment: "center" },
       { text: `${fecha}`, style: "subTitle", alignment: "center", margin: [0, 0, 0, 20] },
 
@@ -1422,19 +1581,31 @@ SalesModels.reportspdfresumen = async (data, fecha = null, barbero = null) => {
 
   return bin;
 }
-SalesModels.reportWeeklySales = async (data) => {
+SalesModels.reportWeeklySales = async (data, tipoproducto) => {
   try {
-    const { barbero } = data;
-    const today = new Date(new Date().getTime() - 5 * 60 * 60 * 1000);
-    // Calcular el inicio de la semana (domingo pasado)
-    const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - today.getDay()); // Retrocede al domingo
-    startOfWeek.setHours(0, 0, 0, 0); // Reinicia a medianoche
+    const { barbero, fecha } = data;
+    // console.log(data)
+    let startOfWeek;
+    let endOfWeek;
 
-    // Calcular el final de la semana (sábado a las 23:59:59)
-    const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(startOfWeek.getDate() + 6);
-    endOfWeek.setHours(23, 59, 59, 999);
+    if (fecha && fecha !== "null") {
+      // Si hay fecha definida, asigna los valores aquí (falta tu lógica)
+      // Ejemplo:
+      startOfWeek = new Date(fecha.start);
+      endOfWeek = new Date(fecha.end);
+    } else {
+      const today = new Date(new Date().getTime() - 5 * 60 * 60 * 1000);
+      // Calcular el inicio de la semana (domingo pasado)
+      startOfWeek = new Date(today);
+      startOfWeek.setDate(today.getDate() - today.getDay()); // Retrocede al domingo
+      startOfWeek.setHours(0, 0, 0, 0); // Reinicia a medianoche
+
+      // Calcular el final de la semana (sábado a las 23:59:59)
+      endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(startOfWeek.getDate() + 6);
+      endOfWeek.setHours(23, 59, 59, 999);
+    }
+
     // Filtro base: ventas dentro de la semana
     const matchFilter = {
       saleDate: { $gte: startOfWeek, $lte: endOfWeek },
@@ -1457,6 +1628,21 @@ SalesModels.reportWeeklySales = async (data) => {
         }
       },
       { $unwind: "$productDetails" },
+      {
+        $lookup: {
+          from: "productservicestypes",
+          localField: "productDetails.type",
+          foreignField: "_id",
+          pipeline: [
+            {
+              $match: { name: tipoproducto }
+            }
+
+          ],
+          as: "serviceType"
+        }
+      },
+      { $unwind: "$serviceType" },
       {
         $addFields: {
           "productsOrServices.name": "$productDetails.name"
@@ -1526,6 +1712,7 @@ SalesModels.reportWeeklySales = async (data) => {
           productosServicios: {
             $push: {
               item: "$productsOrServices.item",
+              quantity: "$productsOrServices.quantity",
               price: "$productsOrServices.price",
               _id: "$productsOrServices._id",
               name: "$productsOrServices.name"
@@ -1594,7 +1781,7 @@ SalesModels.reportWeeklySales = async (data) => {
   }
 }
 
-SalesModels.reportWeeklySalespdf = async (data) => {
+SalesModels.reportWeeklySalespdf = async (data, fecha = null) => {
   const printer = new PdfPrinter(fonts);
 
   const generateTableForBarber = (barberData) => {
@@ -1603,49 +1790,52 @@ SalesModels.reportWeeklySalespdf = async (data) => {
     barberData.dias.forEach((dia) => {
       const tableBody = [
         [
-          { text: "N° Venta", style: "tableHeader" },
+          { text: "N° V.", style: "tableHeader" },
           { text: "Hora", style: "tableHeader" },
           { text: "Cliente", style: "tableHeader" },
           { text: "Servicio", style: "tableHeader" },
-          { text: "Precio", style: "tableHeader" },
-
+          { text: "Cant.", style: "tableHeader" },
+          { text: "P.U", style: "tableHeader" },
+          { text: "Total", style: "tableHeader" },
         ],
       ];
 
-      let total = 0;
+      let totalDia = 0;
 
       dia.ventas.forEach((venta) => {
         venta.productosServicios.forEach((producto) => {
           const hora = venta.saleDate
-            ? new Date(venta.saleDate).toISOString().split("T")[1].split(".")[0] // Obtiene solo la hora en formato HH:mm:ss
+            ? new Date(venta.saleDate).toISOString().split("T")[1].split(".")[0]
             : "";
+
+          const cantidad = producto.quantity || 1;
+          const precioUnitario = producto.price || 0;
+          const total = cantidad * precioUnitario;
+          totalDia += total;
 
           tableBody.push([
             { text: venta.saleNumber || "", style: "tableCell" },
             { text: hora, style: "tableCell" },
             { text: venta.clientName || "", style: "tableCell" },
             { text: producto.name, style: "tableCell" },
-            { text: `$${producto.price}`, style: "tableCell" },
-
+            { text: cantidad.toString(), style: "tableCell" },
+            { text: `$${precioUnitario.toFixed(2)}`, style: "tableCell" },
+            { text: `$${total.toFixed(2)}`, style: "tableCell" },
           ]);
-
-          total += producto.price;
         });
       });
 
       tableBody.push([
-        { text: "", style: "tableTotal" },
-        { text: "", style: "tableTotal" },
-        { text: "", style: "tableTotal" },
+        { text: "", colSpan: 5, style: "tableTotal" }, {}, {}, {}, {},
         { text: "Total: ", style: "tableTotal" },
-        { text: `$${total}`, alignment: "left", style: "tableTotal" },
+        { text: `$${totalDia.toFixed(2)}`, style: "tableTotal" },
       ]);
 
       content.push(
         { text: dia.dia, style: "dayHeader" },
         {
           table: {
-            widths: ["15%", "15%", "30%", "30%", "10%"],
+            widths: ["10%", "10%", "20%", "25%", "10%", "10%", "15%"],
             body: tableBody,
           },
           layout: "lightHorizontalLines",
@@ -1657,17 +1847,35 @@ SalesModels.reportWeeklySalespdf = async (data) => {
   };
 
   const docDefinition = {
-    content: data.map((barber) => [
-      { text: barber.barbero, style: "barberHeader", margin: [0, 10, 0, 10] },
-      ...generateTableForBarber(barber),
-    ]),
+    content: data.map((barber) => {
+      const content = [];
+
+      content.push({
+        text: barber.barbero,
+        style: "barberHeader",
+        margin: [0, 10, 0, 10],
+      });
+
+
+      if (fecha && fecha !== "null") {
+        content.push({
+          text: formatFecha(fecha),
+          style: "dayHeader",
+          margin: [0, 0, 0, 10],
+        });
+      }
+
+      content.push(...generateTableForBarber(barber));
+      return content;
+    }),
     styles: {
       barberHeader: { fontSize: 16, bold: true, alignment: "left" },
       dayHeader: { fontSize: 14, bold: true, margin: [0, 10, 0, 5] },
-      tableHeader: { bold: true, fontSize: 12, fillColor: "#CCCCCC" },
-      tableCell: { fontSize: 10 },
-      tableTotal: { bold: true, fontSize: 12 },
-    }, defaultStyle,
+      tableHeader: { bold: true, fontSize: 10, fillColor: "#CCCCCC" },
+      tableCell: { fontSize: 9 },
+      tableTotal: { bold: true, fontSize: 10 },
+    },
+    defaultStyle,
     header: {
       columns: [
         {
@@ -1675,7 +1883,6 @@ SalesModels.reportWeeklySalespdf = async (data) => {
           style: "documentHeaderRight",
         },
         { text: "CHEVALIERBARBERSHOP", style: "documentHeaderLeft" },
-
       ],
     },
     footer: (currentPage, pageCount) => ({
@@ -1704,18 +1911,27 @@ SalesModels.reportWeeklySalespdf = async (data) => {
     pdfDoc.end();
   });
 };
-SalesModels.reportWeeklySalesresumen = async (data) => {
+SalesModels.reportWeeklySalesresumen = async (data, tipoproducto) => {
   try {
-    // Calcular rango de fechas (domingo - sábado)
-    const today = new Date();
-    const currentDay = today.getDay();
-    const diffToSunday = today.getDate() - currentDay;
-    const startOfWeek = new Date(today.setDate(diffToSunday));
-    startOfWeek.setHours(0, 0, 0, 0);
-    const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(startOfWeek.getDate() + 6);
-    endOfWeek.setHours(23, 59, 59, 999);
+    let startOfWeek;
+    let endOfWeek;
 
+    if (data.fecha !== 'null' && data.fecha) {
+      startOfWeek = new Date(data.fecha.start);
+      endOfWeek = new Date(data.fecha.end);
+    } else {
+      // Calcular rango de fechas (domingo - sábado)
+      const today = new Date();
+      const currentDay = today.getDay();
+      const diffToSunday = today.getDate() - currentDay;
+
+      startOfWeek = new Date(today.setDate(diffToSunday));
+      startOfWeek.setHours(0, 0, 0, 0);
+
+      endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(startOfWeek.getDate() + 6);
+      endOfWeek.setHours(23, 59, 59, 999);
+    }
     // Filtro por barbero
     const matchCondition = {
       saleDate: { $gte: startOfWeek, $lte: endOfWeek }
@@ -1727,20 +1943,68 @@ SalesModels.reportWeeklySalesresumen = async (data) => {
     // Pipeline de agregación
     const result = await SalesModeldb.aggregate([
       { $match: matchCondition },
+
+      // 🔹 Expandimos los productos o servicios
       { $unwind: "$productsOrServices" },
+
+      // 🔹 Creamos dos flujos: ventas normales y colaboraciones
+      {
+        $facet: {
+          ventas: [
+            {
+              $project: {
+                barber: "$barber",
+                saleDate: 1,
+                item: "$productsOrServices.item",
+                price: "$productsOrServices.price",
+                discount: "$productsOrServices.discount",
+                quantity: "$productsOrServices.quantity",
+                isCollaboration: { $literal: false }
+              }
+            }
+          ],
+          colaboraciones: [
+            { $unwind: "$productsOrServices.collaborators" },
+            {
+              $project: {
+                barber: "$productsOrServices.collaborators.barber", // 👈 barbero colaborador
+                saleDate: 1,
+                item: "$productsOrServices.item",
+                price: "$productsOrServices.price",
+                discount: "$productsOrServices.discount",
+                quantity: "$productsOrServices.quantity",
+                isCollaboration: { $literal: true }
+              }
+            }
+          ]
+        }
+      },
+
+      // 🔹 Unimos ambas listas
+      {
+        $project: {
+          all: { $concatArrays: ["$ventas", "$colaboraciones"] }
+        }
+      },
+      { $unwind: "$all" },
+      { $replaceRoot: { newRoot: "$all" } },
+
+      // 🔹 Agrupamos por barbero, día e item
       {
         $group: {
           _id: {
             barber: "$barber",
             day: { $dateToString: { format: "%Y-%m-%d", date: "$saleDate" } },
-            item: "$productsOrServices.item",
-            price: "$productsOrServices.price",
-            discount: "$productsOrServices.discount"
+            item: "$item",
+            price: "$price",
+            discount: "$discount",
+            isCollaboration: "$isCollaboration"
           },
-          count: { $sum: 1 }
+          count: { $sum: "$quantity" }
         }
       },
-      // Lookup para obtener el nombre del producto/servicio
+
+      // 🔹 Lookup para obtener el nombre del producto/servicio
       {
         $lookup: {
           from: "productservices",
@@ -1750,7 +2014,75 @@ SalesModels.reportWeeklySalesresumen = async (data) => {
         }
       },
       { $unwind: "$productDetails" },
-      // Lookup para obtener el descuento
+
+      // 🔹 Lookup para comisión personalizada (si existe)
+      // 🔹 Lookup para comisión personalizada considerando el precio del servicio
+      {
+        $lookup: {
+          from: "usercommissions",
+          let: {
+            barberId: "$_id.barber",
+            serviceId: "$_id.item",
+            servicePrice: "$_id.price"
+          },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$user", "$$barberId"] },
+                    { $eq: ["$service", "$$serviceId"] },
+                    {
+                      $or: [
+                        // ✅ Coincidencia exacta por precio del servicio
+                        { $eq: ["$servicePrice", "$$servicePrice"] },
+                        // ✅ Si no hay precio definido, se considera como general (nulo)
+                        { $not: ["$servicePrice"] }
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            // ✅ Si hay más de un registro, prioriza el que tenga coincidencia exacta de precio
+            {
+              $sort: {
+                servicePrice: -1 // los registros con precio definido van primero
+              }
+            },
+            // ✅ Solo necesitamos la tasa de comisión
+            { $limit: 1 },
+            { $project: { rate: 1, _id: 0 } }
+          ],
+          as: "customCommission"
+        }
+      },
+      {
+        $addFields: {
+          commissionRate: {
+            $cond: [
+              { $gt: [{ $size: "$customCommission" }, 0] },
+              { $arrayElemAt: ["$customCommission.rate", 0] },
+              "$productDetails.commissionRate"
+            ]
+          }
+        }
+      },
+      { $project: { customCommission: 0 } },
+
+      // 🔹 Lookup para tipo de producto (filtrado por tipoproducto)
+      {
+        $lookup: {
+          from: "productservicestypes",
+          localField: "productDetails.type",
+          foreignField: "_id",
+          pipeline: [{ $match: { name: tipoproducto } }],
+          as: "serviceType"
+        }
+      },
+      { $unwind: "$serviceType" },
+
+      // 🔹 Lookup para descuento
       {
         $lookup: {
           from: "discounts",
@@ -1760,7 +2092,8 @@ SalesModels.reportWeeklySalesresumen = async (data) => {
         }
       },
       { $unwind: "$discountsDetails" },
-      // Lookup para obtener el tipo de descuento
+
+      // 🔹 Lookup para tipo de descuento
       {
         $lookup: {
           from: "discounttypes",
@@ -1770,19 +2103,42 @@ SalesModels.reportWeeklySalesresumen = async (data) => {
         }
       },
       { $unwind: "$discounttypesDetails" },
+
+      // 🔹 Campo con el nombre del item
       {
         $addFields: {
           itemName: {
-            $concat: ["$productDetails.name", " - ", { $toString: "$_id.price" }, " - ", { $toString: "$discountsDetails.name" }, " (", { $toString: "$discountsDetails.value" }, {
-              $cond: {
-                if: { $eq: ["$discounttypesDetails.name", "PERCENTAGE"] },
-                then: " %",
-                else: " $"
-              }
-            }, ")"]
-          }
+            $concat: [
+              {
+                $cond: [
+                  { $eq: ["$_id.isCollaboration", true] },
+                  "Colaboración - ",
+                  ""
+                ]
+              },
+              "$productDetails.name",
+              " - ",
+              { $toString: "$_id.price" },
+              " - ",
+              { $toString: "$discountsDetails.name" },
+              " (",
+              { $toString: "$discountsDetails.value" },
+              {
+                $cond: {
+                  if: { $eq: ["$discounttypesDetails.name", "PERCENTAGE"] },
+                  then: " %",
+                  else: " $"
+                }
+              },
+              ")"
+            ]
+          },
+          main_discount: { $ifNull: ["$discountsDetails.main_discount", true] },
+          collaborators_discount: { $ifNull: ["$discountsDetails.collaborators_discount", true] }
         }
       },
+
+      // 🔹 Agrupamos por día y barbero
       {
         $group: {
           _id: {
@@ -1794,13 +2150,19 @@ SalesModels.reportWeeklySalesresumen = async (data) => {
               name: "$itemName",
               price: "$_id.price",
               count: "$count",
-              commissionRate: "$productDetails.commissionRate",
+              commissionRate: "$commissionRate",
               discount: "$discountsDetails.value",
-              discounttype: "$discounttypesDetails.name"
+              discount_comision: "$discountsDetails.discount_comission",
+              discounttype: "$discounttypesDetails.name",
+              isCollaboration: "$_id.isCollaboration",
+              main_discount: "$main_discount",
+              collaborators_discount: "$collaborators_discount"
             }
           }
         }
       },
+
+      // 🔹 Agrupamos todos los días por barbero
       {
         $group: {
           _id: "$_id.barber",
@@ -1812,6 +2174,8 @@ SalesModels.reportWeeklySalesresumen = async (data) => {
           }
         }
       },
+
+      // 🔹 Lookup para obtener detalles del barbero
       {
         $lookup: {
           from: "users",
@@ -1821,6 +2185,8 @@ SalesModels.reportWeeklySalesresumen = async (data) => {
         }
       },
       { $unwind: "$barberDetails" },
+
+      // 🔹 Lookup para los datos personales del barbero
       {
         $lookup: {
           from: "personaldatas",
@@ -1830,6 +2196,8 @@ SalesModels.reportWeeklySalesresumen = async (data) => {
         }
       },
       { $unwind: "$personalDetails" },
+
+      // 🔹 Nombre completo del barbero
       {
         $addFields: {
           barbero: {
@@ -1841,7 +2209,8 @@ SalesModels.reportWeeklySalesresumen = async (data) => {
           }
         }
       },
-      // Ordenar días dentro de cada barbero
+
+      // 🔹 Ordenar los días dentro de cada barbero
       {
         $addFields: {
           dias: {
@@ -1864,20 +2233,43 @@ SalesModels.reportWeeklySalesresumen = async (data) => {
                         ],
                         {
                           $mod: [
-                            { $subtract: [{ $dayOfWeek: { $dateFromString: { dateString: "$$dia.dia" } } }, 1] },
+                            {
+                              $subtract: [
+                                {
+                                  $dayOfWeek: {
+                                    $dateFromString: { dateString: "$$dia.dia" }
+                                  }
+                                },
+                                1
+                              ]
+                            },
                             7
                           ]
                         }
                       ]
                     },
                     " - ",
-                    { $dateToString: { format: "%Y/%m/%d", date: { $dateFromString: { dateString: "$$dia.dia" } } } }
+                    {
+                      $dateToString: {
+                        format: "%Y/%m/%d",
+                        date: { $dateFromString: { dateString: "$$dia.dia" } }
+                      }
+                    }
                   ]
                 },
                 ventas: "$$dia.ventas",
                 sortIndex: {
                   $mod: [
-                    { $subtract: [{ $dayOfWeek: { $dateFromString: { dateString: "$$dia.dia" } } }, 1] },
+                    {
+                      $subtract: [
+                        {
+                          $dayOfWeek: {
+                            $dateFromString: { dateString: "$$dia.dia" }
+                          }
+                        },
+                        1
+                      ]
+                    },
                     7
                   ]
                 }
@@ -1886,6 +2278,7 @@ SalesModels.reportWeeklySalesresumen = async (data) => {
           }
         }
       },
+
       {
         $addFields: {
           dias: {
@@ -1896,6 +2289,8 @@ SalesModels.reportWeeklySalesresumen = async (data) => {
           }
         }
       },
+
+      // 🔹 Proyección final
       {
         $project: {
           barbero: 1,
@@ -1915,12 +2310,12 @@ SalesModels.reportWeeklySalesresumen = async (data) => {
 
     return result;
   } catch (err) {
-    console.error("Error in reportWeeklySalesResumen:", err);
+    console.error("Pipeline falló en:", JSON.stringify(pipeline, null, 2));
     throw err;
   }
 
 }
-SalesModels.reportWeeklySalesresumenpdf = async (data) => {
+SalesModels.reportWeeklySalesresumenpdf = async (data, fecha = null) => {
 
   const printer = new PdfPrinter(fonts);
 
@@ -1931,13 +2326,19 @@ SalesModels.reportWeeklySalesresumenpdf = async (data) => {
       style: "header",
       margin: [0, 10, 0, 10],
     });
-    const esBarberoValido = 
-    (barbero.barbero === "BRYAN PERLAZA" || 
-     barbero.barbero === "ARGENIS MUJICA" || 
-     barbero.barbero === "RONALDO LUZARDO") 
-    ? true 
-    : false;
-    console.log(esBarberoValido)
+    if (fecha && fecha !== "null") {
+      content.push({
+        text: formatFecha(fecha),
+        style: "dayHeader",
+        margin: [0, 0, 0, 10],
+      });
+    }
+    const esBarberoValido =
+      (barbero.barbero === "BRYAN PERLAZA" ||
+        barbero.barbero === "ARGENIS MUJICA" ||
+        barbero.barbero === "RONALDO LUZARDO")
+        ? true
+        : false;
     let totalBarbero = 0; // Total acumulado para el barbero (dinero)
     let totalCantidadBarbero = 0; // Total acumulado de cantidades
     let totalComisionBarbero = 0; // Total acumulado de comisiones
@@ -1970,10 +2371,25 @@ SalesModels.reportWeeklySalesresumenpdf = async (data) => {
       let totalSobranteDia = 0; // Total de sobrantes del día
 
       dia.ventas.forEach((venta) => {
-        const subtotal = venta.discounttype === "PERCENTAGE"
-          ? (venta.price * venta.count) * (1 - venta.discount / 100) // Aplicar descuento porcentual
-          : (venta.price * venta.count) - venta.discount; // Aplicar descuento fijo
-        const comision = (esBarberoValido && venta.discounttype === "PERCENTAGE" && venta.discount === 100) ? 1 : (venta.commissionRate / 100) * (venta.price * venta.count);
+        let subtotal;
+
+        const aplicarDescuento =
+          (venta.isCollaboration && venta.collaborators_discount) ||
+          (!venta.isCollaboration && venta.main_discount);
+
+        if (aplicarDescuento) {
+          subtotal =
+            venta.discounttype === "PERCENTAGE"
+              ? (venta.price * venta.count) * (1 - venta.discount / 100)
+              : (venta.price * venta.count) - venta.discount;
+        } else {
+          subtotal = venta.price * venta.count;
+        }
+        const comision = venta.discount_comision
+          ? (esBarberoValido && venta.discounttype === "PERCENTAGE" && venta.discount === 100
+            ? 1
+            : (venta.commissionRate / 100) * (venta.price * venta.count))
+          : 0;
         const sobrante = subtotal - comision;
         totalDia += subtotal; // Sumar al total del día
         totalCantidadDia += venta.count; // Sumar al total de cantidades del día
@@ -1984,7 +2400,7 @@ SalesModels.reportWeeklySalesresumenpdf = async (data) => {
           { text: venta.name, style: "tableContent1" },
           { text: `$${venta.price}`, style: "tableContent" },
           { text: venta.count.toString(), style: "tableContent" },
-          { text: `${venta.commissionRate}%`, style: "tableContent" }, // Porcentaje de comisión
+          { text: `${venta.discount_comision ? venta.commissionRate : 0}%`, style: "tableContent" }, // Porcentaje de comisión o 0
           { text: `$${comision.toFixed(2)}`, style: "tableContent" }, // Comisión
           { text: `$${sobrante.toFixed(2)}`, style: "tableContent" }, // Sobrante
           { text: `$${subtotal.toFixed(2)}`, style: "tableContent" }, // Subtotal
@@ -2074,6 +2490,7 @@ SalesModels.reportWeeklySalesresumenpdf = async (data) => {
   });
 
   const docDefinition = {
+    //aqio quiero lo mismo que el anterior 
     content: content,
     styles: {
       header: { fontSize: 16, bold: true, alignment: "left" },
@@ -2141,22 +2558,29 @@ SalesModels.getWeeklySales = async () => {
           saleDate: { $gte: startOfWeek, $lte: endOfWeek }
         }
       },
-      // Descomponer los productos o servicios para calcular subtotales
+      // Descomponer los productos o servicios
       {
         $unwind: '$productsOrServices'
       },
-      // Calcular el total por venta
+      // Agrupar por día y calcular total considerando cantidad
       {
         $group: {
           _id: { dayOfWeek: { $dayOfWeek: '$saleDate' } },
-          totalAmount: { $sum: '$productsOrServices.price' }
+          totalAmount: {
+            $sum: {
+              $multiply: [
+                '$productsOrServices.price',
+                '$productsOrServices.quantity'
+              ]
+            }
+          }
         }
       },
       // Ordenar los días de la semana (1 = domingo, 7 = sábado)
       {
         $sort: { '_id.dayOfWeek': 1 }
       },
-      // Formatear el resultado final
+      // Formatear resultado
       {
         $project: {
           _id: 0,
@@ -2170,6 +2594,7 @@ SalesModels.getWeeklySales = async () => {
         }
       }
     ]);
+
 
     // Asegurarse de incluir días sin ventas
     const daysOfWeek = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -2219,7 +2644,14 @@ SalesModels.getLastWeekSales = async () => {
       {
         $group: {
           _id: { dayOfWeek: { $dayOfWeek: '$saleDate' } },
-          totalAmount: { $sum: '$productsOrServices.price' }
+          totalAmount: {
+            $sum: {
+              $multiply: [
+                '$productsOrServices.price',
+                '$productsOrServices.quantity'
+              ]
+            }
+          }
         }
       },
       // Ordenar los días de la semana (1 = domingo, 7 = sábado)
@@ -2247,7 +2679,6 @@ SalesModels.getLastWeekSales = async () => {
       const sale = result.find(r => r.x === day);
       return sale || { x: day, y: 0 };
     });
-
     return sales;
   } catch (error) {
     console.error('Error fetching last weeks sales:', error);
@@ -2304,7 +2735,16 @@ SalesModels.getthisWeekSalesBaerber = async () => {
             },
             day: { $dayOfWeek: "$saleDate" }, // Día de la semana (1 = domingo)
           },
-          totalSales: { $sum: { $sum: "$productsOrServices.price" } }, // Sumar precios
+          totalSales: {
+            $sum: {
+              $sum: {
+                $map: {
+                  input: "$productsOrServices",
+                  in: { $multiply: ["$$this.price", "$$this.quantity"] }
+                }
+              }
+            }
+          }, // Sumar precios
         },
       },
       {
@@ -2349,7 +2789,6 @@ SalesModels.getthisWeekSalesBaerber = async () => {
 
       return acc;
     }, []);
-
     return result;
   } catch (error) {
     console.error('Error fetching last weeks sales:', error);
@@ -2410,7 +2849,16 @@ SalesModels.getLastWeekSalesBarber = async () => {
             },
             day: { $dayOfWeek: "$saleDate" }, // Día de la semana (1 = domingo)
           },
-          totalSales: { $sum: { $sum: "$productsOrServices.price" } }, // Sumar precios
+          totalSales: {
+            $sum: {
+              $sum: {
+                $map: {
+                  input: "$productsOrServices",
+                  in: { $multiply: ["$$this.price", "$$this.quantity"] }
+                }
+              }
+            }
+          }, // Sumar precios
         },
       },
       {
@@ -2475,7 +2923,7 @@ SalesModels.getWeeklySalesSummary = async () => {
 
   try {
     const results = await SalesModeldb.aggregate([
-      // Filtrar las ventas de la semana actual
+      // Filtrar ventas dentro del rango de la semana
       {
         $match: {
           saleDate: {
@@ -2484,34 +2932,33 @@ SalesModels.getWeeklySalesSummary = async () => {
           }
         }
       },
-      // Desglosar los elementos vendidos
+      // Descomponer los productos o servicios
       {
         $unwind: "$productsOrServices"
       },
-      // Agrupar por item y price, calculando la cantidad vendida
+      // Agrupar por item y precio, sumando las cantidades
       {
         $group: {
           _id: {
             item: "$productsOrServices.item",
             price: "$productsOrServices.price"
           },
-          totalSold: { $sum: 1 }
+          totalSold: { $sum: "$productsOrServices.quantity" }
         }
       },
-      // Combinar con el esquema `productservices` para obtener el nombre del item
+      // Hacer el join con productservices para obtener el nombre
       {
         $lookup: {
-          from: "productservices", // Nombre de la colección en MongoDB
+          from: "productservices",
           localField: "_id.item",
           foreignField: "_id",
           as: "itemDetails"
         }
       },
-      // Desestructurar el array de itemDetails
       {
         $unwind: "$itemDetails"
       },
-      // Proyectar los campos necesarios
+      // Proyección final
       {
         $project: {
           _id: 0,
@@ -2526,7 +2973,6 @@ SalesModels.getWeeklySalesSummary = async () => {
         }
       }
     ]);
-
     return results;
   } catch (error) {
     console.error("Error fetching weekly sales summary:", error);
@@ -2624,5 +3070,143 @@ async function savediscount100() {
   } catch (error) {
     console.error("Error al crear el descuento:", error);
   }
+}
+const formatFecha = (fecha) => {
+  const opciones = {
+    weekday: 'short', // 'sáb'
+    day: 'numeric',
+    month: 'short',   // 'abr'
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  };
+
+  const fechaInicio = new Date(fecha.start).toLocaleString('es-MX', opciones);
+  const fechaFin = new Date(fecha.end).toLocaleString('es-MX', opciones);
+
+  return `Del ${fechaInicio} al ${fechaFin}`;
+};
+async function processItemsParallel(productsOrServices, data) {
+  const fidelityFreecuts = await functions.hasFreeCuts(data.cliente);
+  const thursdayFreeCuts = await functions.hasThursdayFreeCuts(data.cliente);
+  const discounService = await functions.hasDiscountService(data.cliente)
+  await Promise.all(productsOrServices.map(async (item) => {
+    try {
+
+      // Si el item es una bebida, saltamos la iteración
+      if (item.isBeverage) { 
+        return};
+      if (discounService && item.isProduct) {  return};
+
+      if (!fidelityFreecuts && !data.hasThursdayDiscount && !data.hasBirthdayDiscount) {
+     
+        await functions.manageHaircutCounter(data.cliente, item);
+      } else if (thursdayFreeCuts && !data.hasFidelityDiscount && !data.hasBirthdayDiscount) {
+        
+        await functions.manageHaircutCounter(data.cliente, item);
+      }
+    } catch (error) {
+      console.error(`Error procesando el item ${item.item}:`, error);
+    }
+  }));
+}
+
+
+async function getValidatedProductOrService(item) {
+  let quantity = item.quantity || 1;
+  let discountId = item.discount || null;
+
+  // Obtener el batch y el producto asociado con su tipo
+  const batch = await getBatchWithProductAndType(item.batchId);
+
+  const productService = batch?.productService;
+  const isBeverage = productService?.type?.name === 'BEBIDAS';
+  const isProduct = productService?.type?.name === 'PRODUCT';
+  // Si es BEBIDA → aplicar descuento "0%"
+  if (isBeverage) {
+    const zeroDiscount = await DiscountModel.findOne({ name: '0%' });
+
+    discountId = zeroDiscount._id;
+
+  } else {
+    // Si no es bebida, verificar si el descuento es de tipo PERCENTAGE → forzar quantity a 1
+    if (discountId) {
+      const discount = await getDiscountWithType(discountId);
+      if (discount?.discountType?.name === 'PERCENTAGE') {
+        quantity = 1;
+      }
+    }
+  }
+
+  return {
+    item: item._id,
+    price: item.price,
+    discount: discountId,
+    batch: item.batchId || null,
+    quantity,
+    isBeverage: isBeverage ? true : false, // false si es BEBIDA, true si no lo es
+    isProduct: isProduct ? true : false,
+  };
+}
+
+async function getDiscountWithType(discountId) {
+  if (!mongoose.Types.ObjectId.isValid(discountId)) return null;
+
+  const result = await DiscountModel.aggregate([
+    {
+      $match: { _id: new mongoose.Types.ObjectId(discountId) }
+    },
+    {
+      $lookup: {
+        from: 'discounttypes',
+        localField: 'discountType',
+        foreignField: '_id',
+        as: 'discountType'
+      }
+    },
+    {
+      $unwind: '$discountType'
+    }
+  ]);
+
+  return result[0] || null;
+}
+
+async function getBatchWithProductAndType(batchId) {
+  if (!mongoose.Types.ObjectId.isValid(batchId)) return null;
+
+  const result = await ProductBatchModel.aggregate([
+    {
+      $match: { _id: new mongoose.Types.ObjectId(batchId) }
+    },
+    {
+      $lookup: {
+        from: 'productservices',
+        localField: 'productServiceId',
+        foreignField: '_id',
+        as: 'productService'
+      }
+    },
+    { $unwind: '$productService' },
+    {
+      $lookup: {
+        from: 'productservicestypes',
+        localField: 'productService.type',
+        foreignField: '_id',
+        as: 'productService.type'
+      }
+    },
+    { $unwind: '$productService.type' }
+  ]);
+
+  return result[0] || null;
+}
+
+function formatearFecha(fechaStr) {
+  const fecha = new Date(fechaStr);
+  const diaSemana = fecha.toLocaleDateString('es-ES', { weekday: 'long' });
+  const fechaCorta = fecha.toLocaleDateString('es-ES');
+
+  return `${diaSemana.charAt(0).toUpperCase() + diaSemana.slice(1)} - ${fechaCorta}`;
 }
 module.exports = SalesModels;

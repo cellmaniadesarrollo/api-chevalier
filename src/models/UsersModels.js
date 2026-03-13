@@ -42,60 +42,82 @@ UsersModels.login = async (data) => {
 
 }
 
-UsersModels.gethairdresser = async (data) => {
+UsersModels.gethairdresser = async (data = null) => {
   try {
+    const rolesToInclude = data?.roles?.length ? data.roles : ['HAIRDRESSER'];
+
     const users = await mongoose.model('users').aggregate([
       {
-        $match: { available: true } // Filtrar usuarios disponibles
+        $match: { available: true }
       },
       {
         $lookup: {
-          from: 'roles', // Colección de roles
-          localField: 'roles', // Campo de referencia en la colección de usuarios
-          foreignField: '_id', // Campo de referencia en la colección de roles
-          as: 'userRoles' // Nombre para los roles embebidos
+          from: 'roles',
+          localField: 'roles',
+          foreignField: '_id',
+          as: 'userRoles'
         }
       },
       {
-        $unwind: '$userRoles' // Descomponer el array de roles
+        $unwind: '$userRoles'
       },
       {
-        $match: { 'userRoles.name': 'HAIRDRESSER' } // Filtrar por el nombre del rol
+        $match: { 'userRoles.name': { $in: rolesToInclude } }
       },
       {
         $lookup: {
-          from: 'personaldatas', // Colección de datos personales
-          localField: 'personalData', // Campo de referencia en la colección de usuarios
-          foreignField: '_id', // Nombre para los datos personales embebidos
+          from: 'personaldatas',
+          localField: 'personalData',
+          foreignField: '_id',
           pipeline: [{
             $project: {
-              _id:0,
-              firstnames:1,
+              _id: 0,
+              firstnames: 1,
               lastnames: 1,
-              firstnames1:1,
+              firstnames1: 1,
               lastnames1: 1,
             }
-          }], 
+          }],
           as: 'personalDataInfo'
         }
       },
       {
-        $unwind: '$personalDataInfo' // Descomponer el array de datos personales
+        $unwind: '$personalDataInfo'
       },
       {
-        $project: { 
+        $addFields: {
           name: {
-            $concat: ["$personalDataInfo.firstnames", " ", "$personalDataInfo.firstnames1", " ", "$personalDataInfo.lastnames", " ", "$personalDataInfo.lastnames1"]
+            $concat: [
+              "$personalDataInfo.firstnames", " ",
+              "$personalDataInfo.firstnames1", " ",
+              "$personalDataInfo.lastnames", " ",
+              "$personalDataInfo.lastnames1"
+            ]
           },
+          isHairdresser: {
+            $cond: [{ $eq: ['$userRoles.name', 'HAIRDRESSER'] }, 1, 0]
+          }
+        }
+      },
+      {
+        $sort: {
+          isHairdresser: -1, // Primero los HAIRDRESSER
+          name: 1             // Luego orden alfabético por nombre
+        }
+      },
+      {
+        $project: {
+          name: 1
         }
       }
     ]);
 
     return users;
   } catch (error) {
-    throw error
+    throw error;
   }
-}
+};
+
 
 
 UsersModels.saveMultipleUsersWithPersonalData = async () => {

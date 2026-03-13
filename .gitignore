@@ -1,5 +1,51 @@
-# Ignorar node_modules
+# Ignorar node_modules (lo más importante en cualquier proyecto Node.js)
 node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json  # opcional: si prefieres no versionar el lockfile (muchos lo versionan, pero si usas npm ci en prod está bien ignorarlo)
 
-# Ignorar archivo con credenciales
-src/keys
+# Ignorar archivos con credenciales y secretos
+.env
+.env.local
+.env.development
+.env.production
+.env.*
+src/keys/
+src/keys/*
+keys/
+*.pem          # claves SSH o certificados
+*.key
+*.crt
+*.p12
+
+# Archivos de entorno de desarrollo y editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*.bak
+*.tmp
+
+# Logs y temporales
+logs/
+*.log
+temp/
+tmp/
+
+# Builds y dist (si generas algo en local, aunque en Express puro no suele haber)
+dist/
+build/
+
+# Archivos de pruebas o coverage
+coverage/
+.nyc_output/
+
+# Opcional: si usas TypeScript en el futuro
+*.tsbuildinfo
+
+# Ignorar cualquier archivo grande o binario que no deba subirse
+*.zip
+*.rar
+*.tar.gz

@@ -5,7 +5,7 @@ const mongoose = require('mongoose');
 const ObjectId = mongoose.Types.ObjectId;
 const { addClientToBirthdayDiscount } = require('../functions/functions');
 
-ClientsModels.save = async (data, userId) => {
+ClientsModels.save = async (data, userId ) => {
   try {
     const nuevoFormulario = new Clientsdb({
       dni: data.cedula,
@@ -31,18 +31,18 @@ ClientsModels.save = async (data, userId) => {
       await addClientToBirthdayDiscount(cliente._id);
     }
 
-    // Agregar el nuevo cliente al descuento del jueves con 1 corte gratis
-    const thursdayDiscount = await Discount.findOne({ name: 'DESCUENTO JUEVES' });
-    if (thursdayDiscount) {
-      thursdayDiscount.customers.push({
-        customer: cliente._id,
-        freeCuts: 1,
-      });
-      await thursdayDiscount.save();
-      console.log(`Cliente ${cliente._id} agregado al descuento del jueves con 1 corte gratis.`);
-    } else {
-      console.log('No se encontró el descuento con nombre "DESCUENTO JUEVES".');
-    }
+    // // Agregar el nuevo cliente al descuento del jueves con 1 corte gratis
+    // const thursdayDiscount = await Discount.findOne({ name: 'DESCUENTO JUEVES' });
+    // if (thursdayDiscount) {
+    //   thursdayDiscount.customers.push({
+    //     customer: cliente._id,
+    //     freeCuts: 1,
+    //   });
+    //   await thursdayDiscount.save();
+    //   console.log(`Cliente ${cliente._id} agregado al descuento del jueves con 1 corte gratis.`);
+    // } else {
+    //   console.log('No se encontró el descuento con nombre "DESCUENTO JUEVES".');
+    // }
 
     return cliente._id;
   } catch (error) {
@@ -69,12 +69,19 @@ ClientsModels.find = async (query) => {
       searchCriteria.dni = query;
     } else {
       // Si no es un DNI ni un ObjectId, busca por coincidencias parciales en nombre o apellido
-      const regex = new RegExp(query.split(' ').join('|'), 'i'); // Separa las palabras por espacios y crea un patrón
-      searchCriteria = {
+      const searchTerms = query.trim().split(/\s+/);
+
+      // Crear array de condiciones para cada término de búsqueda (tu lógica probada)
+      const filteredConditions = searchTerms.map((term) => ({
         $or: [
-          { names: { $regex: regex } },
-          { lastNames: { $regex: regex } }
+          { names: { $regex: term, $options: 'i' } },
+          { lastNames: { $regex: term, $options: 'i' } }
         ]
+      }));
+
+      // Aplicar el $and con todas las condiciones (igual que en tu otro proyecto)
+      searchCriteria = {
+        $and: filteredConditions
       };
     }
 
@@ -84,10 +91,7 @@ ClientsModels.find = async (query) => {
         $match: searchCriteria  // Filtra por los criterios de búsqueda
       },
       {
-        $limit: 10  // Limita los resultados a 10
-      },
-      {
-        $sort: { createdAt: -1 }  // Ordena los resultados por fecha de creación (opcional)
+        $limit: 50  // Limita los resultados a 10
       },
       {
         $project: {  // Selecciona los campos a mostrar (opcional)
@@ -110,6 +114,143 @@ ClientsModels.find = async (query) => {
     throw new Error('Error al buscar clientes: ' + error.message);
   }
 };
+ClientsModels.list = async (data) => {
+  try {
+    const { page = 1, limit = 30, search = '' } = data;
+
+    let match = {};
+    if (search) {
+      match = {
+        $or: [
+          { names: { $regex: search, $options: 'i' } },
+          { lastNames: { $regex: search, $options: 'i' } },
+          { dni: { $regex: search, $options: 'i' } },
+        ]
+      };
+    }
+
+    const clientsData = await Clientsdb.aggregate([
+      { $match: match },
+      {
+        $project: {
+          _id: 1,
+          fullName: { $concat: ['$names', ' ', '$lastNames'] },
+          dni: 1,
+          phone: 1,
+          dateOfBirth: 1,
+          hasPhone: {
+            $cond: [
+              { $and: [{ $ne: ['$phone', ''] }, { $ne: ['$phone', null] }] },
+              1,
+              0
+            ]
+          }
+        }
+      },
+      { $sort: { hasPhone: -1, fullName: 1 } }, // primero con teléfono, luego alfabético
+      {
+        $facet: {
+          metadata: [
+            { $count: "total" },
+            { $addFields: { page, limit } }
+          ],
+          clients: [
+            { $skip: (page - 1) * limit },
+            { $limit: limit }
+          ]
+        }
+      }
+    ]);
+    const total = clientsData[0]?.metadata[0]?.total || 0;
+    const clientsList = clientsData[0]?.clients || [];
+
+    return {
+      total,
+      page,
+      limit,
+      data: clientsList
+    };
+
+  } catch (error) {
+    throw error;
+  }
+};
+
+ClientsModels.findOneClient = async (data) => {
+  try {
+    const { id } = data
+    const items = await Clientsdb.aggregate([
+      { $match: { _id: new ObjectId(id) } },
+      {
+        $project: {
+          id: "$_id",
+          documentoIdentidad: "$dni",
+          nombres: "$names",
+          apellidos: "$lastNames",
+          direccion: "$address",
+          telefono: "$phone",
+          correo: "$email",
+          fechaNacimiento: "$dateOfBirth"
+        }
+      }
+    ])
+
+    return items[0]
+  } catch (error) {
+    throw error;
+  }
+}
+//const Clientsdb = require("../db/clients");
+ClientsModels.editOneClient = async (data, user) => {
+  try {
+    const clientId = data.id;
+    if (!clientId) {
+      throw new Error("ID del cliente es requerido");
+    }
+
+    // Buscar cliente
+    const client = await Clientsdb.findById(clientId);
+    if (!client) {
+      throw new Error("Cliente no encontrado");
+    }
+    //console.log(client)
+    // Actualizar solo si el campo existe
+    if (data.nombres) client.names = data.nombres.trim().toUpperCase();
+    if (data.apellidos) client.lastNames = data.apellidos.trim().toUpperCase();
+    if (data.direccion) client.address = data.direccion.trim().toUpperCase();
+    if (data.telefono) client.phone = data.telefono.trim();
+    if (data.correo) client.email = data.correo.trim();
+    // Solo actualiza dateOfBirth si NO existe 
+    if (!client.dateOfBirth && data.fechaNacimiento) {
+
+      client.dateOfBirth = new Date(data.fechaNacimiento);
+      const today = new Date();
+      const birthDate = new Date(data.fechaNacimiento);
+      if (
+        birthDate.getDate() === today.getDate() &&
+        birthDate.getMonth() === today.getMonth()
+      ) {
+        await addClientToBirthdayDiscount(client._id);
+        console.log('agregado al cumpelños')
+      }
+    }
+
+    // Registrar edición
+    client.edits.push({
+      editedBy: user,
+      editedAt: new Date(),
+    });
+
+    // Guardar cambios
+    await client.save();
+
+    return { message: "Cliente actualizado correctamente", client };
+
+  } catch (error) {
+    throw error
+  }
+}
+
 
 // Guardar múltiples clientes
 async function guardarClientes() {

@@ -12,14 +12,14 @@ const{ticktockupdate}=require('./Controllers/AppController')
 const {updateBirthdayDiscount, taskAt8, taskAt12, updateClientOfTheYearDiscount}=require('./functions/functions')
 const cron = require('node-cron');
 const { env } = require('node:process');
-
+const {aplicarDescuentosDelDia}=require('./functions/cronDicountsDay')
  
 let options;
 
 try {
   options = {
-    key: fs.readFileSync('/home/ubuntu/proyects/privkey.pem'),
-    cert: fs.readFileSync('/home/ubuntu/proyects/fullchain.pem'),
+key: fs.readFileSync('/etc/letsencrypt/live/api.teamcellmania.com/privkey.pem'),
+cert: fs.readFileSync('/etc/letsencrypt/live/api.teamcellmania.com/fullchain.pem')
     // key: fs.readFileSync('./keys/privkey-new.pem'),
     // cert: fs.readFileSync('./keys/fullchain.pem')
   };
@@ -53,12 +53,18 @@ cron.schedule('5 0 * * *', () => {
   console.log('Ejecutando updateBirthdayDiscount');
   updateBirthdayDiscount();
 });
-
-// Tarea programada para todos los jueves a las 8
-cron.schedule('0 8 * * 4', () => {
-  console.log('Ejecutando taskAt8 todos los jueves a las 8');
-  taskAt8();
+// tarea programada todos los dias a las 01:00
+cron.schedule('0 3 * * *', () => {
+  aplicarDescuentosDelDia();
 });
+// cron.schedule('53 23 * * *', () => {
+//   aplicarDescuentosDelDia();
+// });
+// Tarea programada para todos los jueves a las 8
+// cron.schedule('0 8 * * 4', () => {
+//   console.log('Ejecutando taskAt8 todos los jueves a las 8');
+//   taskAt8();
+// });
 
 // Tarea programada para ejecutarse a medianoche el primer día de cada mes para actualizar el corte gratis del cliente del año
 cron.schedule('4 16 5 * *', async () => {
@@ -88,6 +94,7 @@ const allowedOrigins = [
   'https://www.chevalierbarbershop.com',
   'https://chevalierbarbershop.com',
   'http://localhost:4200',
+  'http://localhost:53208',
   'https://192.168.10.52'
 ];
 
@@ -103,8 +110,8 @@ app.use(cors({
   credentials: true
 }));
 app.use(morgan('dev'));
-app.use(urlencoded({ extended: true }));
-app.use(json());
+app.use(urlencoded({ extended: true, limit: '50mb' }));
+app.use(json({ limit: '50mb' }));
 
 /**
  * Rutas  console.log(JSON.stringify(filteredNumbers, null, 2))
@@ -114,6 +121,8 @@ app.use(require('./routes/login'))
 app.use(require('./routes/clients'))
 app.use(require('./routes/products'))
 app.use(require('./routes/sales'))
+app.use(require('./routes/suppliers'))
+app.use(require('./routes/discounts'))
 /**   
  * RUTAS PUBLICAS 
  **/

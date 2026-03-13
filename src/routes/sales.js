@@ -14,6 +14,6 @@ routes.post("/api/salesreportminimal",logged,hasRole('MANAGER', 'ADMIN'), SalesC
 routes.post("/api/salesprintticket",logged,hasRole('CASHIER', 'ADMIN'), SalesController.dataprintticket); 
 routes.post("/api/salesreportgrahp",logged,hasRole('MANAGER', 'ADMIN'),  SalesController.reportgraph); 
 routes.post("/api/salesreportpdfdetail",logged,hasRole('MANAGER', 'ADMIN'),  SalesController.repordetailpdf); 
-routes.post("/api/salesreportpdfmedium",logged,hasRole('MANAGER', 'ADMIN'),  SalesController.reportmediumpdf); 
+routes.post("/api/salesreportpdfmedium",logged,hasRole('MANAGER', 'ADMIN'),  SalesController.reportmediumpdf);  
 
 module.exports = routes;

@@ -6,19 +6,19 @@ const Client = require('../db/clients');
 const Discount = require("../db/discounts");
 const Service = require('../db/productservices');
 const HaircutCounter = require('../db/haircutcounters');
- 
+
 functions.getSequential = async (data) => {
-    try {
-        const counter = await Sequential.findOneAndUpdate(
-            { name: data }, // Nombre del contador que usaremos para ventas
-            { $inc: { seq: 1 } }, // Incrementa el valor de "seq" en 1
-            { new: true, upsert: true } // Crea el documento si no existe
-          );
-          return counter.seq;
-  
-    } catch (error) {
-        throw error
-    }
+  try {
+    const counter = await Sequential.findOneAndUpdate(
+      { name: data }, // Nombre del contador que usaremos para ventas
+      { $inc: { seq: 1 } }, // Incrementa el valor de "seq" en 1
+      { new: true, upsert: true } // Crea el documento si no existe
+    );
+    return counter.seq;
+
+  } catch (error) {
+    throw error
+  }
 
 
 }
@@ -46,63 +46,122 @@ functions.hasFreeCuts = async (customerId) => {
   }
 }
 
-functions.manageHaircutCounter = async (customerId, serviceName = "CORTE GENERAL", discountName = "FIDELITY_DISCOUNT", selectedDiscountName = null) => {
-  try {
-    // Buscar el servicio por nombre
-    const serviceget = await Service.findOne({ name: serviceName });
-    if (!serviceget) {
-      console.log(`El servicio "${serviceName}" no fue encontrado.`);
-      return;
-    }
+functions.manageHaircutCounter = async (customerId, serviceName) => {
+  try { 
+ 
+    var servicegetaux, duscountgetaux
+    if (ObjectId.isValid(serviceName.item) && ObjectId.isValid(serviceName.discount)) {
+      servicegetaux = await Service.aggregate([
+        { $match: { _id: new ObjectId(serviceName.item) } }
+      ])
+      duscountgetaux = await Discount.aggregate([
+        { $match: { _id: new ObjectId(serviceName.discount), isGlobal: true } }
+      ])
 
-    // Verificar si el descuento seleccionado es el del Jueves
-    if (discountName === 'DESCUENTO JUEVES') {
-      console.log('El descuento seleccionado es el del Jueves. No se incrementará el contador.');
-      return;
-    }
+      if (!servicegetaux || !duscountgetaux) {
+        return;
+      }
+    } else {
+      return
 
+    }
+    const serviceget = servicegetaux[0];
     // Buscar o crear el contador del cliente para este servicio
-    let counter = await HaircutCounter.findOne({ customer: customerId, service: serviceget._id });
+   // let counter = await HaircutCounter.findOne({ customer: customerId, service: serviceget._id, counter: { $gt: 0 } });
+    let counter = await HaircutCounter.findOne({ customer: customerId, service: serviceget._id  });
+    let serviceId = serviceget._id
+    let serviceMasaje = null;
+    let siHayContador=true;
+    // if(counter&& !serviceName.isProduct){
+    //   siHayContador=true
+    // }
 
-    if (!counter) {
-      console.log('El cliente no tiene un contador. Creando uno nuevo...');
+    // if (!counter && !serviceName.isProduct) {
+    //   // Si no existe el counter, busca el servicio "MASAJE"
+    //   serviceMasaje = await Service.findOne({ name: "MASAJE EN SILLA" });
+    //   serviceId = serviceMasaje._id
+    //   if (serviceMasaje) {
+    //     // Buscar counter con el id del servicio "MASAJE"
+    //     counter = await HaircutCounter.findOne({
+    //       customer: customerId,
+    //       service: serviceMasaje._id
+    //     });
+
+    //   }
+    // }
+    if (!counter && (serviceMasaje || serviceName.isProduct)) {
+      console.log('El cliente no tiene un contador. Creando uno nuevo... MASAJE');
       counter = new HaircutCounter({
         customer: customerId,
-        service: serviceget._id,
+        service: serviceId, // 👈 siempre creamos con el ID de "MASAJE"
         counter: 0,
       });
+    } else if (counter) {
+      const now = new Date();
+      const differenceInMilliseconds = now - counter.updatedAt;
+      const differenceInDays = Math.floor(differenceInMilliseconds / (1000 * 60 * 60 * 24));
+      if (differenceInDays < 7) {
+        console.log('El contador ya fue actualizado en los últimos 7 días. No se incrementará.');
+        return
+      } else {
+        console.log('se incrementara');
+      }
+    } else {
+      console.log('fallo del contador');
+      return
     }
 
     // Incrementar el contador
     counter.counter += 1;
     console.log(`Contador incrementado: ${counter.counter}`);
-
+ 
     // Si el contador llega a 5, reiniciar y actualizar el descuento
     if (counter.counter >= 5) {
+      // var serviceorproductname='MASAJE EN SILLA'
+      // if(serviceName.isProduct || siHayContador){ 
+      //   serviceorproductname=servicegetaux[0].name
+      // }
       counter.counter = 0; // Reiniciar el contador
       console.log('El contador alcanzó 5. Reiniciando a 0.');
 
       // Buscar el descuento asociado al servicio y cliente
       let discount = await Discount.findOne({
-        name: discountName,
-        productsOrServices: serviceget._id,
+        name: `FIDELITY_DISCOUNT ${servicegetaux[0].name}`,//+ ,serviceorproductname
+        productsOrServices: serviceId,//serviceget._id,
         'customers.customer': customerId,
+        isGlobal: false
       });
 
       if (!discount) {
         console.log('No se encontró un descuento para este cliente y servicio. Agregando al descuento...');
+        const now = new Date();
+        const maxDate = new Date('2099-12-31T00:00:00.000Z');
+
         discount = await Discount.findOneAndUpdate(
-          { name: discountName, productsOrServices: serviceget._id }, // Buscar por descuento y servicio
+          {
+            name: `FIDELITY_DISCOUNT ${servicegetaux[0].name}`, //+ ,serviceorproductname
+            productsOrServices: serviceId,//serviceget._id,
+            isGlobal: false
+          },
           {
             $push: {
-              customers: { 
-                customer: customerId, 
-                freeCuts: 1, // Inicializamos con un corte gratuito
-                discountValue: null, // Valor específico del descuento
+              customers: {
+                customer: customerId,
+                freeCuts: 1,
+                discountValue: null,
               },
             },
+            $setOnInsert: {
+              discountType: new mongoose.Types.ObjectId('67192a98cbb3a91218017410'),
+              value: 100,
+              validFrom: now,
+              validUntil: maxDate,
+            }
           },
-          { new: true, upsert: true } // Crear si no existe
+          {
+            new: true,
+            upsert: true
+          }
         );
       } else {
         // Incrementar los cortes gratuitos del cliente en el descuento
@@ -122,123 +181,123 @@ functions.manageHaircutCounter = async (customerId, serviceName = "CORTE GENERAL
     console.error('Error al gestionar el contador de cortes:', error);
   }
 }
-functions.applyDiscounts=async (saleData)=>{
-    try {
-        const { cliente, productosservcio } = saleData;
-    
-        for (const item of productosservcio) {
-          const { _id: serviceId, discount: discountId } = item;
-    
-          // Verificar si hay un descuento aplicado
-          if (!discountId) continue;
-    
-          // Obtener el descuento aplicado
-          const discount = await Discount.findOne({ _id: discountId });
-    
-          if (!discount) {
-            console.log(`No se encontró el descuento con ID: ${discountId}`);
-            continue;
-          }
-    
-          // Ignorar los descuentos globales
-          if (discount.isGlobal) {
-            console.log(`El descuento ${discountId} es global y no se modificará.`);
-            continue;
-          }
-    
-          // Verificar si el cliente está en el descuento y restar un corte gratuito
-          const customerIndex = discount.customers.findIndex(
-            (c) => c.customer.toString() === cliente.toString()
-          );
-    
-          if (customerIndex === -1) {
-            console.log(`El cliente no está asociado al descuento ${discountId}.`);
-            continue;
-          }
-    
-          // Restar un corte gratuito si está disponible
-          const customerData = discount.customers[customerIndex];
-          if (customerData.freeCuts > 0) {
-            discount.customers[customerIndex].freeCuts -= 1;
-            console.log(
-              `Se restó un corte gratuito del cliente ${cliente} en el descuento ${discountId}.`
-            );
-          } else {
-            console.log(
-              `El cliente ${cliente} no tiene cortes gratuitos disponibles en el descuento ${discountId}.`
-            );
-          }
-    
-          // Guardar los cambios en el descuento
-          await discount.save();
-        }
-        console.log('Proceso de descuentos completado.');
-      } catch (error) {
-        console.error('Error al aplicar los descuentos:', error);
+functions.applyDiscounts = async (saleData) => {
+  try {
+    const { cliente, productosservcio } = saleData;
+
+    for (const item of productosservcio) {
+      const { _id: serviceId, discount: discountId } = item;
+
+      // Verificar si hay un descuento aplicado
+      if (!discountId) continue;
+
+      // Obtener el descuento aplicado
+      const discount = await Discount.findOne({ _id: discountId });
+
+      if (!discount) {
+        console.log(`No se encontró el descuento con ID: ${discountId}`);
+        continue;
       }
-}
-functions.updateBirthdayDiscount=async ()=>{
-   
-    try { 
-  
-      // Buscar el descuento de cumpleaños
-      const birthdayDiscount = await Discount.findOne({ name: 'BIRTHDAY_DISCOUNT' });
-      if (!birthdayDiscount) {
-        console.log('No se encontró el descuento con nombre "BIRTHDAY_DISCOUNT".');
-        return;
+
+      // Ignorar los descuentos globales
+      if (discount.isGlobal) {
+        console.log(`El descuento ${discountId} es global y no se modificará.`);
+        continue;
       }
-  
-      // Obtener la fecha actual (día y mes)
-      const today = new Date();
-      const todayDay = today.getDate();
-      const todayMonth = today.getMonth() + 1; // En MongoDB los meses van de 1 a 12
-  
-      // Usar agregación para filtrar clientes que cumplen años hoy
-      const clientsBirthdayToday = await Client.aggregate([
-        {
-          $match: {
-            dateOfBirth: { $exists: true, $ne: null },
-          },
-        },
-        {
-          $project: {
-            _id: 1,
-            dateOfBirth: 1,
-            day: { $dayOfMonth: '$dateOfBirth' },
-            month: { $month: '$dateOfBirth' },
-          },
-        },
-        {
-          $match: {
-            day: todayDay,
-            month: todayMonth,
-          },
-        },
-      ]);
-  
-      // Eliminar todos los clientes actuales del descuento
-      birthdayDiscount.customers = [];
-  
-      // Agregar los clientes que cumplen años hoy
-      clientsBirthdayToday.forEach(client => {
-        birthdayDiscount.customers.push({
-          customer: client._id,
-          freeCuts: 1, // Asigna un corte gratuito
-        });
-      });
-  
-      // Guardar los cambios en el descuento
-      await birthdayDiscount.save();
-  
-      console.log(
-        `Actualización completada: ${clientsBirthdayToday.length} clientes cumplen años hoy y se les otorgó el descuento.`
+
+      // Verificar si el cliente está en el descuento y restar un corte gratuito
+      const customerIndex = discount.customers.findIndex(
+        (c) => c.customer.toString() === cliente.toString()
       );
-    } catch (error) {
-      console.error('Error al actualizar el descuento de cumpleaños:', error);
-    } 
+
+      if (customerIndex === -1) {
+        console.log(`El cliente no está asociado al descuento ${discountId}.`);
+        continue;
+      }
+
+      // Restar un corte gratuito si está disponible
+      const customerData = discount.customers[customerIndex];
+      if (customerData.freeCuts > 0) {
+        discount.customers[customerIndex].freeCuts -= 1;
+        console.log(
+          `Se restó un corte gratuito del cliente ${cliente} en el descuento ${discountId}.`
+        );
+      } else {
+        console.log(
+          `El cliente ${cliente} no tiene cortes gratuitos disponibles en el descuento ${discountId}.`
+        );
+      }
+
+      // Guardar los cambios en el descuento
+      await discount.save();
+    }
+    console.log('Proceso de descuentos completado.');
+  } catch (error) {
+    console.error('Error al aplicar los descuentos:', error);
+  }
 }
-functions.addClientToBirthdayDiscount=async (clientId)=>{
-  try { 
+functions.updateBirthdayDiscount = async () => {
+
+  try {
+
+    // Buscar el descuento de cumpleaños
+    const birthdayDiscount = await Discount.findOne({ name: 'BIRTHDAY_DISCOUNT' });
+    if (!birthdayDiscount) {
+      console.log('No se encontró el descuento con nombre "BIRTHDAY_DISCOUNT".');
+      return;
+    }
+
+    // Obtener la fecha actual (día y mes)
+    const today = new Date();
+    const todayDay = today.getDate();
+    const todayMonth = today.getMonth() + 1; // En MongoDB los meses van de 1 a 12
+
+    // Usar agregación para filtrar clientes que cumplen años hoy
+    const clientsBirthdayToday = await Client.aggregate([
+      {
+        $match: {
+          dateOfBirth: { $exists: true, $ne: null },
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          dateOfBirth: 1,
+          day: { $dayOfMonth: '$dateOfBirth' },
+          month: { $month: '$dateOfBirth' },
+        },
+      },
+      {
+        $match: {
+          day: todayDay,
+          month: todayMonth,
+        },
+      },
+    ]);
+
+    // Eliminar todos los clientes actuales del descuento
+    birthdayDiscount.customers = [];
+
+    // Agregar los clientes que cumplen años hoy
+    clientsBirthdayToday.forEach(client => {
+      birthdayDiscount.customers.push({
+        customer: client._id,
+        freeCuts: 1, // Asigna un corte gratuito
+      });
+    });
+
+    // Guardar los cambios en el descuento
+    await birthdayDiscount.save();
+
+    console.log(
+      `Actualización completada: ${clientsBirthdayToday.length} clientes cumplen años hoy y se les otorgó el descuento.`
+    );
+  } catch (error) {
+    console.error('Error al actualizar el descuento de cumpleaños:', error);
+  }
+}
+functions.addClientToBirthdayDiscount = async (clientId) => {
+  try {
     // Buscar el descuento de cumpleaños
     const birthdayDiscount = await Discount.findOne({ name: 'BIRTHDAY_DISCOUNT' });
     if (!birthdayDiscount) {
@@ -270,9 +329,9 @@ functions.addClientToBirthdayDiscount=async (clientId)=>{
     console.error('Error al agregar el cliente al descuento de cumpleaños:', error);
   }
 }
-functions.isConsumidorFinal=async (clienteId)=>{
+functions.isConsumidorFinal = async (clienteId) => {
   try {
-    const cliente = await Client.findOne({  _id: clienteId,names: "CONSUMIDOR", lastNames: "FINAL" });
+    const cliente = await Client.findOne({ _id: clienteId, names: "CONSUMIDOR", lastNames: "FINAL" });
     return !!cliente; // Retorna true si encuentra un cliente, false si no
   } catch (error) {
     console.error("Error al buscar cliente:", error);
@@ -280,13 +339,13 @@ functions.isConsumidorFinal=async (clienteId)=>{
   }
 }
 
-functions.hasCorteGeneral=async ( productosservcio)=>{
+functions.hasCorteGeneral = async (productosservcio) => {
   try {
     // Extraer los IDs de los productos del arreglo
-    const productIds = productosservcio.map(producto => producto._id); 
+    const productIds = productosservcio.map(producto => producto._id);
     // Buscar si algún producto tiene el nombre "CORTE GENERAL"
     const product = await Service.findOne({ _id: { $in: productIds }, name: "CORTE GENERAL" });
- 
+
     return !!product; // Retorna true si existe, false si no
   } catch (error) {
     console.error("Error al buscar productos:", error);
@@ -423,5 +482,43 @@ functions.hasClientOfYearFreeCuts = async (customerId) => {
     return false;
   }
 }
-
+functions.hasDiscountService = async (customerId) => {
+  try {
+     const now = new Date();
+            const nowUtc = new Date(now.getTime() + (5 * 60 * 60 * 1000)); // Sumar 5 horas
+            const discounts = await Discount.aggregate([
+                {
+                    $match: {
+                        isGlobal: false,
+                        customers: {
+                            $elemMatch: {
+                                customer: new mongoose.Types.ObjectId(customerId),
+                                freeCuts: { $gt: 0 }
+                            }
+                        },
+                        validFrom: { $lte: new Date() },
+                        validUntil: { $gte: new Date() }
+                    }
+                },
+                {
+                    $lookup: {
+                        from: "productservices",
+                        localField: "productsOrServices",
+                        foreignField: "_id",
+                        as: "products"
+                    }
+                },
+                {
+                    $match: {
+                        "products.type": new mongoose.Types.ObjectId("67167d3501e3de1963263199")
+                    }
+                }
+            ]);
+            if (discounts.length > 0) {
+                return true
+            } else { return false }
+  } catch (error) {
+    throw error
+  }
+}
 module.exports = functions;

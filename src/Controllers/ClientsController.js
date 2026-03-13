@@ -3,9 +3,9 @@ const ClientsModels = require('../models/ClientsModels');
 
 ClientsController.save = async (req, res) => {
   try {
- 
+const userId = req.user ? req.user._id : '674e40c24e8adf83a401fa3f';
     // Llamar al modelo para realizar el login 
-    const clientes = await ClientsModels.save(req.body, req.user._id);
+    const clientes = await ClientsModels.save(req.body, userId );
 
     res.status(200).json(clientes);
   } catch (error) {
@@ -17,6 +17,7 @@ ClientsController.save = async (req, res) => {
 
 ClientsController.find = async (req, res) => {
   try {
+ 
     // Verifica si 'find' está presente en el cuerpo de la solicitud
     if (!req.body.find || typeof req.body.find !== 'string') {
       return res.status(400).json({ message: 'La búsqueda debe ser una cadena válida.' });
@@ -37,4 +38,34 @@ ClientsController.find = async (req, res) => {
     res.status(500).json({ message: 'Error interno del servidor.' });
   }
 };
+ClientsController.list = async (req, res) => {
+  try {
+    const clientes = await ClientsModels.list(req.body);
+    res.status(200).json(clientes);
+  } catch (error) {
+    console.error('Error en la búsqueda de clientes:', error);
+    res.status(500).json({ message: 'Error interno del servidor.' });
+  }
+}
+
+
+ClientsController.findoneclient = async (req, res) => {
+  try {
+    
+    const clientes = await ClientsModels.findOneClient(req.body);
+    res.status(200).json(clientes);
+  } catch (error) {
+    console.error('Error en la búsqueda de clientes:', error);
+    res.status(500).json({ message: 'Error interno del servidor.' });
+  }
+}
+ClientsController.editOneclient = async (req, res) => {
+  try {
+    const clientes = await ClientsModels.editOneClient(req.body,req.user._id);
+    res.status(200).json(clientes);
+  } catch (error) {
+    console.error('Error en la búsqueda de clientes:', error);
+    res.status(500).json({ message: 'Error interno del servidor.' });
+  }
+}
 module.exports = ClientsController;
