@@ -47,87 +47,57 @@ functions.hasFreeCuts = async (customerId) => {
 }
 
 functions.manageHaircutCounter = async (customerId, serviceName) => {
-  try { 
- 
-    var servicegetaux, duscountgetaux
+  try {
+    var servicegetaux, duscountgetaux;
     if (ObjectId.isValid(serviceName.item) && ObjectId.isValid(serviceName.discount)) {
       servicegetaux = await Service.aggregate([
         { $match: { _id: new ObjectId(serviceName.item) } }
-      ])
+      ]);
       duscountgetaux = await Discount.aggregate([
         { $match: { _id: new ObjectId(serviceName.discount), isGlobal: true } }
-      ])
+      ]);
 
-      if (!servicegetaux || !duscountgetaux) {
+      if (!servicegetaux.length || !duscountgetaux.length) {
         return;
       }
     } else {
-      return
-
+      return;
     }
+
     const serviceget = servicegetaux[0];
-    // Buscar o crear el contador del cliente para este servicio
-   // let counter = await HaircutCounter.findOne({ customer: customerId, service: serviceget._id, counter: { $gt: 0 } });
-    let counter = await HaircutCounter.findOne({ customer: customerId, service: serviceget._id  });
-    let serviceId = serviceget._id
-    let serviceMasaje = null;
-    let siHayContador=true;
-    // if(counter&& !serviceName.isProduct){
-    //   siHayContador=true
-    // }
+    const serviceId = serviceget._id;
 
-    // if (!counter && !serviceName.isProduct) {
-    //   // Si no existe el counter, busca el servicio "MASAJE"
-    //   serviceMasaje = await Service.findOne({ name: "MASAJE EN SILLA" });
-    //   serviceId = serviceMasaje._id
-    //   if (serviceMasaje) {
-    //     // Buscar counter con el id del servicio "MASAJE"
-    //     counter = await HaircutCounter.findOne({
-    //       customer: customerId,
-    //       service: serviceMasaje._id
-    //     });
+    // Cada servicio lleva su propio contador — sin fallback a otro servicio
+    let counter = await HaircutCounter.findOne({ customer: customerId, service: serviceId });
 
-    //   }
-    // }
-    if (!counter && (serviceMasaje || serviceName.isProduct)) {
-      console.log('El cliente no tiene un contador. Creando uno nuevo... MASAJE');
+    if (!counter) {
+      console.log('El cliente no tiene un contador para este servicio. Creando uno nuevo...');
       counter = new HaircutCounter({
         customer: customerId,
-        service: serviceId, // 👈 siempre creamos con el ID de "MASAJE"
+        service: serviceId,
         counter: 0,
       });
-    } else if (counter) {
+    } else {
       const now = new Date();
       const differenceInMilliseconds = now - counter.updatedAt;
       const differenceInDays = Math.floor(differenceInMilliseconds / (1000 * 60 * 60 * 24));
       if (differenceInDays < 7) {
         console.log('El contador ya fue actualizado en los últimos 7 días. No se incrementará.');
-        return
-      } else {
-        console.log('se incrementara');
+        return;
       }
-    } else {
-      console.log('fallo del contador');
-      return
+      console.log('se incrementará');
     }
 
-    // Incrementar el contador
     counter.counter += 1;
     console.log(`Contador incrementado: ${counter.counter}`);
- 
-    // Si el contador llega a 5, reiniciar y actualizar el descuento
+
     if (counter.counter >= 5) {
-      // var serviceorproductname='MASAJE EN SILLA'
-      // if(serviceName.isProduct || siHayContador){ 
-      //   serviceorproductname=servicegetaux[0].name
-      // }
-      counter.counter = 0; // Reiniciar el contador
+      counter.counter = 0;
       console.log('El contador alcanzó 5. Reiniciando a 0.');
 
-      // Buscar el descuento asociado al servicio y cliente
       let discount = await Discount.findOne({
-        name: `FIDELITY_DISCOUNT ${servicegetaux[0].name}`,//+ ,serviceorproductname
-        productsOrServices: serviceId,//serviceget._id,
+        name: `FIDELITY_DISCOUNT ${servicegetaux[0].name}`,
+        productsOrServices: serviceId,
         'customers.customer': customerId,
         isGlobal: false
       });
@@ -139,8 +109,8 @@ functions.manageHaircutCounter = async (customerId, serviceName) => {
 
         discount = await Discount.findOneAndUpdate(
           {
-            name: `FIDELITY_DISCOUNT ${servicegetaux[0].name}`, //+ ,serviceorproductname
-            productsOrServices: serviceId,//serviceget._id,
+            name: `FIDELITY_DISCOUNT ${servicegetaux[0].name}`,
+            productsOrServices: serviceId,
             isGlobal: false
           },
           {
@@ -164,7 +134,6 @@ functions.manageHaircutCounter = async (customerId, serviceName) => {
           }
         );
       } else {
-        // Incrementar los cortes gratuitos del cliente en el descuento
         const customerIndex = discount.customers.findIndex(c => c.customer.toString() === customerId.toString());
         if (customerIndex !== -1) {
           discount.customers[customerIndex].freeCuts += 1;
@@ -175,7 +144,6 @@ functions.manageHaircutCounter = async (customerId, serviceName) => {
       await discount.save();
     }
 
-    // Guardar los cambios en el contador
     await counter.save();
   } catch (error) {
     console.error('Error al gestionar el contador de cortes:', error);
@@ -484,39 +452,39 @@ functions.hasClientOfYearFreeCuts = async (customerId) => {
 }
 functions.hasDiscountService = async (customerId) => {
   try {
-     const now = new Date();
-            const nowUtc = new Date(now.getTime() + (5 * 60 * 60 * 1000)); // Sumar 5 horas
-            const discounts = await Discount.aggregate([
-                {
-                    $match: {
-                        isGlobal: false,
-                        customers: {
-                            $elemMatch: {
-                                customer: new mongoose.Types.ObjectId(customerId),
-                                freeCuts: { $gt: 0 }
-                            }
-                        },
-                        validFrom: { $lte: new Date() },
-                        validUntil: { $gte: new Date() }
-                    }
-                },
-                {
-                    $lookup: {
-                        from: "productservices",
-                        localField: "productsOrServices",
-                        foreignField: "_id",
-                        as: "products"
-                    }
-                },
-                {
-                    $match: {
-                        "products.type": new mongoose.Types.ObjectId("67167d3501e3de1963263199")
-                    }
-                }
-            ]);
-            if (discounts.length > 0) {
-                return true
-            } else { return false }
+    const now = new Date();
+    const nowUtc = new Date(now.getTime() + (5 * 60 * 60 * 1000)); // Sumar 5 horas
+    const discounts = await Discount.aggregate([
+      {
+        $match: {
+          isGlobal: false,
+          customers: {
+            $elemMatch: {
+              customer: new mongoose.Types.ObjectId(customerId),
+              freeCuts: { $gt: 0 }
+            }
+          },
+          validFrom: { $lte: new Date() },
+          validUntil: { $gte: new Date() }
+        }
+      },
+      {
+        $lookup: {
+          from: "productservices",
+          localField: "productsOrServices",
+          foreignField: "_id",
+          as: "products"
+        }
+      },
+      {
+        $match: {
+          "products.type": new mongoose.Types.ObjectId("67167d3501e3de1963263199")
+        }
+      }
+    ]);
+    if (discounts.length > 0) {
+      return true
+    } else { return false }
   } catch (error) {
     throw error
   }

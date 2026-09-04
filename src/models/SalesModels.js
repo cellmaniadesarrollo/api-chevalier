@@ -12,8 +12,8 @@ const productservicestypes = require("../db/productservicestypes");
 const ProductService = require('../db/productservices');
 const ProductBatchModel = require('../db/productbatch');
 const functions = require('../functions/functions');
-
-
+const CashSession = require('../db/cashSession.model')
+const { getLocalDate, isSameDay, isWithinCashWindow } = require('../utils/cashSessionUtils');
 SalesModels.findpaymentMethods = async () => {
   return await paymentMethods.aggregate([
     {
@@ -150,7 +150,10 @@ SalesModels.getproductservicestypes = async () => {
 }
 SalesModels.save = async (data, user) => {
   try {
-
+    const { session, blocked, reason } = await resolveSessionForSale();
+    if (blocked) {
+      throw new Error(reason);
+    }
 
     // 1. Generar número de orden
     const numberOrder = await Sequential.getSequential("sales");
@@ -228,7 +231,8 @@ SalesModels.save = async (data, user) => {
       productsOrServices,
       saleNumber: numberOrder,
       dailyBarberSaleNumber: await getDailyBarberSaleNumber(data.barbero),
-      observations: data.observaciones || ''
+      observations: data.observaciones || '',
+      cashSession: session ? session._id : null, // 🔹 corregido
     };
 
     // 5. Guardar la venta
@@ -261,6 +265,9 @@ SalesModels.save = async (data, user) => {
 
   } catch (error) {
     console.error('Error al guardar la venta:', error);
+    if (error.code) {
+      throw error; // 🔹 ya tiene code, no lo reemplaces
+    }
     throw new Error(error.message);
   }
 }
@@ -2979,8 +2986,158 @@ SalesModels.getWeeklySalesSummary = async () => {
     throw error;
   }
 }
+SalesModels.getDailyCashierReport = async () => {
+  // Fecha actual ajustada a UTC-5
+  const now = new Date(new Date().getTime() - 5 * 60 * 60 * 1000);
+  const startOfDay = new Date(now);
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(now);
+  endOfDay.setHours(23, 59, 59, 999);
 
+  const sales = await SalesModeldb.find({
+    saleDate: { $gte: startOfDay, $lte: endOfDay }
+  })
+    .populate('barber', 'username')
+    .populate('cashier', 'username')
+    .populate('client', 'names lastNames') // 🔹 corregido
+    .populate({
+      path: 'paymentDetails',
+      populate: [
+        { path: 'paymentMethod', select: 'name' },
+        { path: 'bankEntity', select: 'name' }
+      ]
+    })
+    .populate({
+      path: 'productsOrServices.item',
+      select: 'name price'
+    })
+    .populate({
+      path: 'productsOrServices.discount',
+      select: 'name value discountType',
+      populate: { path: 'discountType', select: 'name' }
+    })
+    .populate({
+      path: 'productsOrServices.collaborators.barber',
+      select: 'username'
+    })
+    .sort({ saleDate: 1 })
+    .lean();
 
+  // ── Agrupar por barbero ──────────────────────────────────────────────────
+  const barberMap = {};
+
+  for (const sale of sales) {
+    const barberId = sale.barber._id.toString();
+
+    if (!barberMap[barberId]) {
+      barberMap[barberId] = {
+        barberId,
+        barberName: sale.barber.username,
+        cuts: [],
+        totalGross: 0,
+        totalDiscount: 0,
+        totalNet: 0,
+      };
+    }
+
+    for (const ps of sale.productsOrServices) {
+      const itemPrice = ps.item?.price ?? ps.price;
+      const grossLine = itemPrice * ps.quantity;
+
+      const discountInfo = ps.discount
+        ? {
+          name: ps.discount.name,
+          type: ps.discount.discountType?.name || '',
+          value: ps.discount.value,
+        }
+        : null;
+
+      let discountLine = 0;
+      if (discountInfo) {
+        if (discountInfo.type === 'PERCENTAGE') {
+          discountLine = grossLine * (discountInfo.value / 100);
+        } else if (discountInfo.type === 'FIXED') {
+          discountLine = discountInfo.value;
+        }
+        discountLine = Math.min(discountLine, grossLine);
+      }
+
+      const netPrice = grossLine - discountLine;
+
+      barberMap[barberId].cuts.push({
+        saleId: sale._id,
+        saleNumber: sale.saleNumber,
+        saleDate: sale.saleDate,
+        client: `${sale.client?.names || ''} ${sale.client?.lastNames || ''}`.trim(), // 🔹 corregido
+        service: ps.item?.name || '—',
+        quantity: ps.quantity,
+        grossPrice: grossLine,
+        netPrice,
+        discountAmount: discountLine,
+        discountInfo,
+        collaborators: ps.collaborators?.map(c => ({
+          name: c.barber?.username || '—',
+          value: c.value,
+        })) || [],
+        paymentMethod: sale.paymentDetails?.paymentMethod?.name || '—',
+      });
+
+      barberMap[barberId].totalGross += grossLine;
+      barberMap[barberId].totalDiscount += discountLine;
+      barberMap[barberId].totalNet += netPrice;
+    }
+  }
+
+  const barbers = Object.values(barberMap).map(b => ({
+    ...b,
+    totalGross: Math.round(b.totalGross * 100) / 100,
+    totalDiscount: Math.round(b.totalDiscount * 100) / 100,
+    totalNet: Math.round(b.totalNet * 100) / 100,
+  }));
+
+  // ── Resumen de caja del día ───────────────────────────────────────────────
+  const cashSummary = {
+    totalCash: 0,
+    totalTransfer: 0,
+    totalOther: 0,
+    grandTotal: 0,
+  };
+
+  for (const sale of sales) {
+    const method = sale.paymentDetails?.paymentMethod?.name?.toUpperCase() || '';
+    const amount = sale.paymentDetails?.amount || 0;
+
+    if (method === 'EFECTIVO') cashSummary.totalCash += amount;
+    else if (method === 'TRANSFERENCIA') cashSummary.totalTransfer += amount;
+    else cashSummary.totalOther += amount;
+
+    cashSummary.grandTotal += amount;
+  }
+
+  cashSummary.totalCash = Math.round(cashSummary.totalCash * 100) / 100;
+  cashSummary.totalTransfer = Math.round(cashSummary.totalTransfer * 100) / 100;
+  cashSummary.totalOther = Math.round(cashSummary.totalOther * 100) / 100;
+  cashSummary.grandTotal = Math.round(cashSummary.grandTotal * 100) / 100;
+
+  // 🔹 Lista plana de ventas con descuento aplicado
+  const discountsApplied = barbers
+    .flatMap(b => b.cuts.map(c => ({ ...c, barberName: b.barberName })))
+    .filter(c => c.discountAmount > 0)
+    .map(c => ({
+      saleId: c.saleId,
+      saleNumber: c.saleNumber,
+      saleDate: c.saleDate,
+      barberName: c.barberName,
+      client: c.client,
+      service: c.service,
+      grossPrice: c.grossPrice,
+      discountAmount: Math.round(c.discountAmount * 100) / 100,
+      netPrice: Math.round((c.grossPrice - c.discountAmount) * 100) / 100,
+      discountInfo: c.discountInfo,
+    }));
+
+  return { barbers, cashSummary, discountsApplied };
+};
 function formatearFecha(fechaString) {
   const fecha = new Date(fechaString);
 
@@ -3094,15 +3251,16 @@ async function processItemsParallel(productsOrServices, data) {
     try {
 
       // Si el item es una bebida, saltamos la iteración
-      if (item.isBeverage) { 
-        return};
-      if (discounService && item.isProduct) {  return};
+      if (item.isBeverage) {
+        return
+      };
+      if (discounService && item.isProduct) { return };
 
       if (!fidelityFreecuts && !data.hasThursdayDiscount && !data.hasBirthdayDiscount) {
-     
+
         await functions.manageHaircutCounter(data.cliente, item);
       } else if (thursdayFreeCuts && !data.hasFidelityDiscount && !data.hasBirthdayDiscount) {
-        
+
         await functions.manageHaircutCounter(data.cliente, item);
       }
     } catch (error) {
@@ -3208,5 +3366,148 @@ function formatearFecha(fechaStr) {
   const fechaCorta = fecha.toLocaleDateString('es-ES');
 
   return `${diaSemana.charAt(0).toUpperCase() + diaSemana.slice(1)} - ${fechaCorta}`;
+}
+
+
+
+// Convierte un rango de fechas 'YYYY-MM-DD' (hora local UTC-5) al mismo
+// esquema con el que se guarda saleDate. Sin fechas, devuelve el día de "hoy" en UTC-5.
+function resolveDateRange(startDateStr, endDateStr) {
+  if (startDateStr && endDateStr) {
+    const start = new Date(`${startDateStr}T00:00:00.000Z`);
+    const end = new Date(`${endDateStr}T23:59:59.999Z`);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      const err = new Error('Formato de fecha inválido. Use YYYY-MM-DD.');
+      err.code = 'INVALID_DATE_RANGE';
+      throw err;
+    }
+    if (start > end) {
+      const err = new Error('La fecha de inicio no puede ser posterior a la fecha final.');
+      err.code = 'INVALID_DATE_RANGE';
+      throw err;
+    }
+    return { start, end };
+  }
+
+  const nowShifted = new Date(Date.now() - 5 * 60 * 60 * 1000);
+  const y = nowShifted.getUTCFullYear();
+  const m = nowShifted.getUTCMonth();
+  const d = nowShifted.getUTCDate();
+
+  return {
+    start: new Date(Date.UTC(y, m, d, 0, 0, 0, 0)),
+    end: new Date(Date.UTC(y, m, d, 23, 59, 59, 999)),
+  };
+}
+
+SalesModels.getMyCutsReport = async (barberId, startDateStr, endDateStr) => {
+  const { start, end } = resolveDateRange(startDateStr, endDateStr);
+
+  const sales = await SalesModeldb.find({
+    barber: barberId,
+    saleDate: { $gte: start, $lte: end },
+  })
+    .populate('client', 'names lastNames') // 🔹 corregido
+    .populate({
+      path: 'paymentDetails',
+      populate: [{ path: 'paymentMethod', select: 'name' }],
+    })
+    .populate({
+      path: 'productsOrServices.item',
+      select: 'name price',
+    })
+    .populate({
+      path: 'productsOrServices.discount',
+      select: 'name value discountType',
+      populate: { path: 'discountType', select: 'name' },
+    })
+    .sort({ saleDate: 1 })
+    .lean();
+
+  const cuts = [];
+  let totalGross = 0;
+  let totalDiscount = 0;
+  let totalNet = 0;
+
+  for (const sale of sales) {
+    for (const ps of sale.productsOrServices) {
+      const itemPrice = ps.item?.price ?? ps.price;
+      const grossLine = itemPrice * ps.quantity;
+
+      const discountInfo = ps.discount
+        ? {
+          name: ps.discount.name,
+          type: ps.discount.discountType?.name || '',
+          value: ps.discount.value,
+        }
+        : null;
+
+      let discountLine = 0;
+      if (discountInfo) {
+        if (discountInfo.type === 'PERCENTAGE') {
+          discountLine = grossLine * (discountInfo.value / 100);
+        } else if (discountInfo.type === 'FIXED') {
+          discountLine = discountInfo.value;
+        }
+        discountLine = Math.min(discountLine, grossLine);
+      }
+
+      const netPrice = grossLine - discountLine;
+      const hadDiscount = discountLine > 0;
+
+      cuts.push({
+        saleId: sale._id,
+        saleNumber: sale.saleNumber,
+        saleDate: sale.saleDate,
+        client: `${sale.client?.names || ''} ${sale.client?.lastNames || ''}`.trim(), // 🔹 corregido
+        service: ps.item?.name || '—',
+        quantity: ps.quantity,
+        grossPrice: Math.round(grossLine * 100) / 100,
+        netPrice: Math.round(netPrice * 100) / 100,
+        hadDiscount,
+        discountAmount: Math.round(discountLine * 100) / 100,
+        discountInfo: hadDiscount ? discountInfo : null,
+        paymentMethod: sale.paymentDetails?.paymentMethod?.name || '—',
+      });
+
+      totalGross += grossLine;
+      totalDiscount += discountLine;
+      totalNet += netPrice;
+    }
+  }
+
+  return {
+    range: { start, end },
+    cuts,
+    totals: {
+      totalCuts: cuts.length,
+      totalGross: Math.round(totalGross * 100) / 100,
+      totalDiscount: Math.round(totalDiscount * 100) / 100,
+      totalNet: Math.round(totalNet * 100) / 100,
+    },
+  };
+};
+// Resuelve qué pasa con la venta respecto a la sesión de caja
+async function resolveSessionForSale() {
+  const openSession = await CashSession.findOne({ status: 'open' });
+  const local = getLocalDate();
+
+  if (openSession) {
+    if (isSameDay(openSession.openingDate, local)) {
+      return { session: openSession, blocked: false };
+    }
+    const err = new Error('Existe una sesión de caja del día anterior sin cerrar. Debe cerrarla antes de continuar.');
+    err.code = 'CASH_SESSION_PENDING';
+    throw err;
+  }
+
+  if (isWithinCashWindow(local)) {
+    const err = new Error('Debe abrir una sesión de caja para registrar ventas en este horario.');
+    err.code = 'CASH_SESSION_REQUIRED';
+    throw err;
+  }
+
+  return { session: null, blocked: false };
 }
 module.exports = SalesModels;

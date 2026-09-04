@@ -4,7 +4,8 @@ const users = require("../models/UsersModels")
 const SalesModels = require("../models/SalesModels");
 const sales = require('../db/sales');
 const { updateBirthdayDiscount } = require('../functions/functions')
-
+const CashSessionModels = require('../models/CashSessionModels');
+const CashMovementModels = require('../models/CashMovementModels');
 SalesController.getnewsalesdata = async (req, res) => {
     try {
         //await updateBirthdayDiscount()
@@ -17,8 +18,8 @@ SalesController.getnewsalesdata = async (req, res) => {
         response.paymentmethods = await SalesModels.findpaymentMethods()
         //const sales = await SalesModels.list({ page: 1, limit: 5 })
         const sales = await SalesModels.get5sales()
-       // console.log(JSON.stringify(sales[0], null, 2))  
-        // console.log(JSON.stringify(response.services , null, 2)) 
+        // console.log(JSON.stringify(sales[0], null, 2))  
+        // console.log(JSON.stringify(response.services, null, 2))
         response.products = sales
         res.status(200).json(response);
     } catch (error) {
@@ -57,27 +58,21 @@ SalesController.getfinancialentitys = async (req, res) => {
 
 SalesController.save = async (req, res) => {
     try {
-        //console.log(req.body )
-       // console.log(JSON.stringify(req.body, null, 2))  
-        
-        //console.log(JSON.stringify(req.body, null, 2))  
-          const data = await SalesModels.save(req.body, req.user._id)
-
-          const sales = await SalesModels.finddocument(data._id)
-
-         res.status(200).json(sales)
+        const data = await SalesModels.save(req.body, req.user._id)
+        const sales = await SalesModels.finddocument(data._id)
+        res.status(200).json(sales)
     } catch (error) {
         console.log(error.message)
-        // Check for specific error message
-        if (error.message.includes('La compra con descuento del jueves está fuera del rango de tiempo permitido')) {
-            return res.status(400).json({
-                message: 'Error al guardar la venta: ' + error.message,
-            });
+
+        if (error.code === 'CASH_SESSION_REQUIRED' || error.code === 'CASH_SESSION_PENDING') {
+            return res.status(400).json({ message: error.message, code: error.code });
         }
-        // Cualquier otro error no controlado
-        res.status(500).json({
-            message: error.message,
-        });
+
+        if (error.message.includes('La compra con descuento del jueves está fuera del rango de tiempo permitido')) {
+            return res.status(400).json({ message: 'Error al guardar la venta: ' + error.message });
+        }
+
+        res.status(500).json({ message: error.message });
     }
 }
 
@@ -132,7 +127,7 @@ SalesController.reportsminimal = async (req, res) => {
 SalesController.dataprintticket = async (req, res) => {
     try {
         let sales = await SalesModels.finddocument(req.body.id)
-         // console.log(JSON.stringify(sales , null, 2)) 
+        // console.log(JSON.stringify(sales , null, 2)) 
         sales.copia = true
         res.status(200).json(sales)
     } catch (error) {
@@ -144,29 +139,47 @@ SalesController.dataprintticket = async (req, res) => {
 }
 SalesController.reportgraph = async (req, res) => {
     try {
-        let sales = {}
-        sales.thisWeek = await SalesModels.getWeeklySales()
-        sales.lastWeek = await SalesModels.getLastWeekSales()
-        sales.thisWeekpeerbarber = await SalesModels.getthisWeekSalesBaerber()
-        sales.lastWeekpeerbarber = await SalesModels.getLastWeekSalesBarber()
-        sales.thisWeekservices = await SalesModels.getWeeklySalesSummary()
+        const [
+            thisWeek,
+            lastWeek,
+            thisWeekpeerbarber,
+            lastWeekpeerbarber,
+            thisWeekservices,
+            recentSessions,
+            recentMovements,
+        ] = await Promise.all([
+            SalesModels.getWeeklySales(),
+            SalesModels.getLastWeekSales(),
+            SalesModels.getthisWeekSalesBaerber(),
+            SalesModels.getLastWeekSalesBarber(),
+            SalesModels.getWeeklySalesSummary(),
+            CashSessionModels.getRecentSessions(10),
+            CashMovementModels.getRecentMovements(10),
+        ]);
 
-        //console.log(sales.lastWeekpeerbarber)
-        res.status(200).json(sales)
+        res.status(200).json({
+            thisWeek,
+            lastWeek,
+            thisWeekpeerbarber,
+            lastWeekpeerbarber,
+            thisWeekservices,
+            recentSessions,
+            recentMovements,
+        });
     } catch (error) {
-        console.log(error)
+        console.log(error);
         res.status(500).json({
             message: 'Error interno del servidor: ' + error.message,
         });
     }
-}
+};
 SalesController.reportmediumpdf = async (req, res) => {
     try {
         const datass = await SalesModels.reportWeeklySalesresumen(req.body, req.body.tipoinnforme)
-       //console.log(JSON.stringify(datass , null, 2))  
+        //console.log(JSON.stringify(datass , null, 2))  
         const pdf = await SalesModels.reportWeeklySalesresumenpdf(datass, req.body.fecha)
 
-         res.status(200).json({ pdfBase64: pdf })
+        res.status(200).json({ pdfBase64: pdf })
     } catch (error) {
         console.log(error)
         res.status(500).json({
@@ -196,20 +209,53 @@ const UserCommission = require('../db/usercommissions');
 
 // Crear una nueva comisión personalizada
 async function createCommission() {
-  try {
-    const data = {
-      user: '6843413d5f5f9851b6f23f9d',
-      servicePrice: 3,
-      service: '671693cfabafcf7a889a0fdd',
-      rate: 50
-    };
+    try {
+        const data = {
+            user: '6843413d5f5f9851b6f23f9d',
+            servicePrice: 3,
+            service: '671693cfabafcf7a889a0fdd',
+            rate: 50
+        };
 
-    const commission = new UserCommission(data);
-    await commission.save();
+        const commission = new UserCommission(data);
+        await commission.save();
 
-    console.log('✅ Comisión guardada correctamente:', commission);
-  } catch (error) {
-    console.error('❌ Error al guardar la comisión:', error.message);
-  }
+        console.log('✅ Comisión guardada correctamente:', commission);
+    } catch (error) {
+        console.error('❌ Error al guardar la comisión:', error.message);
+    }
 }
+
+SalesController.getCashierDailyReport = async (req, res) => {
+    try {
+        const [salesReport, movementsReport] = await Promise.all([
+            SalesModels.getDailyCashierReport(),
+            CashMovementModels.getDailyMovements(),
+        ]);
+
+        res.status(200).json({
+            barbers: salesReport.barbers,
+            cashSummary: salesReport.cashSummary,
+            discountsApplied: salesReport.discountsApplied, // 🔹 nuevo
+            movements: movementsReport.movements,
+            totalIncome: movementsReport.totalIncome,
+            totalExpense: movementsReport.totalExpense,
+            netMovements: movementsReport.netMovements,
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Error interno: ' + error.message });
+    }
+};
+SalesController.getMyCutsReport = async (req, res) => {
+    try {
+        const { startDate, endDate } = req.query;
+        const result = await SalesModels.getMyCutsReport(req.user._id, startDate, endDate);
+        res.status(200).json(result);
+    } catch (error) {
+        console.error(error);
+        const status = error.code === 'INVALID_DATE_RANGE' ? 400 : 500;
+        res.status(status).json({ message: error.message, code: error.code || null });
+    }
+};
 module.exports = SalesController;

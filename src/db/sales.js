@@ -48,7 +48,7 @@ const salesSchema = new mongoose.Schema({
         }
     },
     observations: { type: String, maxlength: 500 },
-
+    cashSession: { type: mongoose.Schema.Types.ObjectId, ref: 'cashsessions', default: null },
 }, {
     timestamps: true,
     versionKey: false,

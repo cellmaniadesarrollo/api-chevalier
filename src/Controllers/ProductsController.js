@@ -1,7 +1,16 @@
 const ProductsController = {};
 const ProductsModels = require('../models/ProductsModels');
+const ProductsModels_new = require('../models/ProductServiceModels');
 const users = require("../models/UsersModels")
 
+ProductsController.listSimple = async (req, res) => {
+  try {
+    const services = await ProductsModels_new.listSimple();
+    res.status(200).json(services);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
 ProductsController.find = async (req, res) => {
   try {
     // Verificar si 'find' está presente y es una cadena válida
@@ -10,7 +19,7 @@ ProductsController.find = async (req, res) => {
     }
 
     // Llamar al modelo para realizar la búsqueda
-    const data = await ProductsModels.find({ name: req.body.find }); 
+    const data = await ProductsModels.find({ name: req.body.find });
     // Si no se encuentran productos o servicios, devolver 404
     if (!data || data.length === 0) {
       return res.status(404).json({
@@ -89,7 +98,7 @@ ProductsController.findSuppliers = async (req, res) => {
 }
 ProductsController.findProducts = async (req, res) => {
   try {
-    const products = await ProductsModels.findProducts(req.body.find); 
+    const products = await ProductsModels.findProducts(req.body.find);
     res.json(products);
   } catch (error) {
     console.error('Error al obtener nuevos datos de ingresos:', error);
@@ -116,7 +125,7 @@ ProductsController.saveProductsincome = async (req, res) => {
 
 ProductsController.printDocumentincome = async (req, res) => {
   try {
-    const data = await ProductsModels.printDocumentincome(req.body, req.user._id); 
+    const data = await ProductsModels.printDocumentincome(req.body, req.user._id);
     res.json(data)
   } catch (error) {
     console.error('Error al guardar el ingreso de productos:', error);
@@ -147,8 +156,8 @@ ProductsController.findProductBanches = async (req, res) => {
   try {
     const [batches, hairdresser] = await Promise.all([
       ProductsModels.findProductBanches(req.body),
-      users.gethairdresser({roles:['HAIRDRESSER','MANAGER']})
-    ]); 
+      users.gethairdresser({ roles: ['HAIRDRESSER', 'MANAGER'] })
+    ]);
     res.json({ batches, hairdresser });
   } catch (error) {
     console.error('Error al guardar el ingreso de productos:', error);
@@ -158,7 +167,7 @@ ProductsController.findProductBanches = async (req, res) => {
 
 ProductsController.saveBarberSuppliesTracker = async (req, res) => {
   try {
-    await ProductsModels.saveBarberSuppliesTracker(req.body,req.user._id)
+    await ProductsModels.saveBarberSuppliesTracker(req.body, req.user._id)
     res.sendStatus(200);
   } catch (error) {
     res.sendStatus(500)
@@ -166,8 +175,8 @@ ProductsController.saveBarberSuppliesTracker = async (req, res) => {
 }
 ProductsController.listBarberSuppliesTracker = async (req, res) => {
   try {
-  const [items, hairdresser]=   await Promise.all([ProductsModels.listBarberSuppliesTracker(req.body),  users.gethairdresser()])
-    res.json({items, hairdresser})
+    const [items, hairdresser] = await Promise.all([ProductsModels.listBarberSuppliesTracker(req.body), users.gethairdresser()])
+    res.json({ items, hairdresser })
   } catch (error) {
     res.sendStatus(500)
   }
@@ -176,9 +185,9 @@ ProductsController.listBarberSuppliesTracker = async (req, res) => {
 
 ProductsController.expiredProducts = async (req, res) => {
   try {
-    const  items = await ProductsModels.expiredProducts()
-     
-    res.json( items );
+    const items = await ProductsModels.expiredProducts()
+
+    res.json(items);
   } catch (error) {
     res.sendStatus(500)
   }

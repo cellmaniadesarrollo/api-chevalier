@@ -15,7 +15,7 @@ const discountSchema = new mongoose.Schema({
   },
   discountType: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'discounttypes',  // Referencia a la colección de tipos de descuento
+    ref: 'discountTypes',  // Referencia a la colección de tipos de descuento
     required: true,
   },
   value: {
@@ -63,7 +63,7 @@ const discountSchema = new mongoose.Schema({
     enum: [0, 1, 2, 3, 4, 5, 6], // 0 = domingo, 1 = lunes, etc.
     default: [], // si está vacío, aplica todos los días o ninguno según tu lógica
   },
-    discount_comission: {
+  discount_comission: {
     type: Boolean,
     default: true,
   },

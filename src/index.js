@@ -1,4 +1,4 @@
-require('dotenv').config(); 
+require('dotenv').config();
 const express = require('express')
 const morgan = require('morgan')
 const path = require('node:path');
@@ -6,28 +6,28 @@ const { urlencoded, json } = require('express');
 const cors = require('cors');
 const initDB = require('./config/db')
 const https = require('https');
-const fs = require('fs'); 
+const fs = require('fs');
 const WebSocket = require('ws');
-const{ticktockupdate}=require('./Controllers/AppController')
-const {updateBirthdayDiscount, taskAt8, taskAt12, updateClientOfTheYearDiscount}=require('./functions/functions')
+const { ticktockupdate } = require('./Controllers/AppController')
+const { updateBirthdayDiscount, taskAt8, taskAt12, updateClientOfTheYearDiscount } = require('./functions/functions')
 const cron = require('node-cron');
 const { env } = require('node:process');
-const {aplicarDescuentosDelDia}=require('./functions/cronDicountsDay')
- 
+const { aplicarDescuentosDelDia } = require('./functions/cronDicountsDay')
+
 let options;
 
 try {
   options = {
-key: fs.readFileSync('/etc/letsencrypt/live/api.teamcellmania.com/privkey.pem'),
-cert: fs.readFileSync('/etc/letsencrypt/live/api.teamcellmania.com/fullchain.pem')
+    key: fs.readFileSync('/etc/letsencrypt/live/api.teamcellmania.com/privkey.pem'),
+    cert: fs.readFileSync('/etc/letsencrypt/live/api.teamcellmania.com/fullchain.pem')
     // key: fs.readFileSync('./keys/privkey-new.pem'),
     // cert: fs.readFileSync('./keys/fullchain.pem')
   };
-} catch (error) { 
-  try { 
+} catch (error) {
+  try {
     options = {
       key: fs.readFileSync('src/keys/localhost.key'),
-      cert: fs.readFileSync('src/keys/localhost.crt') 
+      cert: fs.readFileSync('src/keys/localhost.crt')
     };
   } catch (error) {
     console.error('Error loading production certificates:', error.message);
@@ -80,7 +80,7 @@ cron.schedule('4 16 5 * *', async () => {
 // cron.schedule('*/10 * * * * *', () => {
 //   console.log('reload')
 //   ticktockupdate()
- 
+
 // });
 // Crear un servidor HTTPS utilizando Express
 const server = https.createServer(options, app);
@@ -123,10 +123,15 @@ app.use(require('./routes/products'))
 app.use(require('./routes/sales'))
 app.use(require('./routes/suppliers'))
 app.use(require('./routes/discounts'))
+app.use(require('./routes/cashsession'))
+app.use(require('./routes/cashMovement.routes'))
+app.use(require('./routes/user.routes'))
+app.use(require('./routes/initialdata.routes'))
+app.use(require('./routes/userCommission.routes'))
 /**   
  * RUTAS PUBLICAS 
  **/
- app.use(express.static(path.join(__dirname, 'public')))
+app.use(express.static(path.join(__dirname, 'public')))
 
 /**
  * EJECUTAR SERVIDOR

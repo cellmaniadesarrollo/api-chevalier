@@ -1,10 +1,10 @@
-const mongoose = require('mongoose'); 
+const mongoose = require('mongoose');
 
 
 const paymentDetailsSchema = new mongoose.Schema({
     paymentMethod: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'paymentMethod',
+        ref: 'paymentMethods',
         required: true
     },
     subtotal: { type: Number, required: true },
@@ -13,7 +13,7 @@ const paymentDetailsSchema = new mongoose.Schema({
 
     bankEntity: { // Solo si la forma de pago es transferencia
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'financialEntity'
+        ref: 'financialEntitys'
     },
     transferNumber: { type: String },  // Número de comprobante de la transferencia
 }, {

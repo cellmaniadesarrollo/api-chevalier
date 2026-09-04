@@ -9,7 +9,7 @@ const userSchema = new mongoose.Schema({
     unique: true,
   },
   email: {
-    type: String, 
+    type: String,
   },
   password: {
     type: String,
@@ -25,19 +25,19 @@ const userSchema = new mongoose.Schema({
   available: {
     type: Boolean,
     default: true,
-},
+  },
   personalData: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'personaldatas', // Referencia al esquema de datos personales
+    ref: 'personalDatas', // Referencia al esquema de datos personales
     required: true,
   },
   sessionId: {
     type: String, // Campo para almacenar el identificador único de la sesión
     default: null,
   }
-}, { 
+}, {
   timestamps: true,
-  versionKey: false 
+  versionKey: false
 });
 
 // Agregar el plugin de paginación al esquema de usuario
