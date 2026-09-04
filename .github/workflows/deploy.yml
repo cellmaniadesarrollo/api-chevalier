@@ -3,7 +3,7 @@ name: Deploy Chevalier API to EC2
 on:
   push:
     branches:
-      - master # o "main" según tu rama principal
+      - main # o "main" según tu rama principal
 
 jobs:
   deploy:
