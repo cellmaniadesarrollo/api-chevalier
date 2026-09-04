@@ -9,21 +9,29 @@ const { v4: uuidv4 } = require('uuid');
 const PersonalData = require("../db/personalDatas")
 const mongoose = require('mongoose');
 UsersModels.login = async (data) => {
+  // `email` puede contener la dirección de correo o el nombre de usuario
   const { email, password, rememberMe } = data;
 
   try {
-    const user = await Users.findOne({ email , available: true }).populate('roles');
+    // Busca si 'email' coincide con el correo O con el username, asegurando que 'available' sea true
+    const user = await Users.findOne({
+      $or: [
+        { email: email },
+        { username: email }
+      ],
+      available: true
+    }).populate('roles');
+
     if (!user) throw new Error('User not found');
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) throw new Error('Invalid credentials');
 
-    const sessionId = uuidv4(); // Genera un identificador único de sesión
-    const token = jwt.sign({ id: user._id, sessionId }, "process.env.JWT_SECRET", {
+    const sessionId = uuidv4();
+    const token = jwt.sign({ id: user._id, sessionId }, process.env.JWT_SECRET, {
       expiresIn: rememberMe ? '7d' : '12h'
     });
 
-    // Guardar el identificador de sesión en la base de datos
     user.sessionId = sessionId;
     await user.save();
 
@@ -37,9 +45,8 @@ UsersModels.login = async (data) => {
       },
     };
   } catch (err) {
-    throw new Error(err.message); // Lanzar el error para que lo capture el controlador
+    throw new Error(err.message);
   }
-
 }
 
 UsersModels.gethairdresser = async (data = null) => {
@@ -220,7 +227,7 @@ UsersModels.saveMultipleUsersWithPersonalData = async () => {
       const personalData = new PersonalData({
         dni,
         firstnames,
-        lastnames, 
+        lastnames,
         firstnames1,
         lastnames1,
         date_of_admission,
