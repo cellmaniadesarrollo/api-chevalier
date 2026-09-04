@@ -13,7 +13,7 @@ const { updateBirthdayDiscount, taskAt8, taskAt12, updateClientOfTheYearDiscount
 const cron = require('node-cron');
 const { env } = require('node:process');
 const { aplicarDescuentosDelDia } = require('./functions/cronDicountsDay')
-
+const { migrateLegacySales } = require('./db/migrateLegacySales')
 let options;
 
 try {
@@ -144,3 +144,4 @@ server.listen(3050, () => {
 
 
 initDB()
+migrateLegacySales()

@@ -1,0 +1,59 @@
+name: Deploy Chevalier API to EC2
+
+on:
+  push:
+    branches:
+      - master # o "main" según tu rama principal
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v4
+
+      - name: Sincronizar archivos a EC2 via rsync
+        uses: easingthemes/ssh-deploy@main
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+          ARGS: "-rlptgozr --delete"
+          REMOTE_HOST: ${{ secrets.EC2_HOST }}
+          REMOTE_USER: ${{ secrets.EC2_USER }}
+          TARGET: "/home/ubuntu/proyects/api-chevalier"
+          EXCLUDE: "/node_modules/, /.git/, /.github/, /src/.env"
+
+      - name: Generar src/.env y desplegar con PM2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: JWT_SECRET,MONGO_URI,AWS_REGION,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,AWS_BUCKET_NAME
+          script: |
+            # 1. Ir a la raíz del proyecto
+            cd /home/ubuntu/proyects/api-chevalier
+
+            # 2. Generar o actualizar el archivo src/.env
+            cat <<EOF > src/.env
+            JWT_SECRET=${JWT_SECRET}
+            MONGO_URI=${MONGO_URI}
+            AWS_REGION=${AWS_REGION}
+            AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+            AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+            AWS_BUCKET_NAME=${AWS_BUCKET_NAME}
+            EOF
+
+            # 3. Instalar dependencias de producción
+            npm install --omit=dev
+
+            # 4. Reiniciar o iniciar con PM2
+            pm2 reload chevalier || pm2 start src/index.js --name "chevalier"
+            pm2 save
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_BUCKET_NAME: ${{ secrets.AWS_BUCKET_NAME }}

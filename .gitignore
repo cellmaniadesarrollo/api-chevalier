@@ -49,3 +49,4 @@ coverage/
 *.zip
 *.rar
 *.tar.gz
+.env.prod
