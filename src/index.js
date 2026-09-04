@@ -144,4 +144,4 @@ server.listen(3050, () => {
 
 
 initDB()
-migrateLegacySales()
+//migrateLegacySales()
