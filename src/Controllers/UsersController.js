@@ -1,14 +1,15 @@
 const UsersController = {};
 const UsersModels = require('../models/UsersModels');
- 
-UsersController.login  = async (req, res) => {
+
+UsersController.login = async (req, res) => {
   try {
     // const datausers=await UsersModels.saveMultipleUsersWithPersonalData()
     // console.log(datausers)
 
 
     // Llamar al modelo para realizar el login
-    const data = await UsersModels.login(req.body); 
+    const data = await UsersModels.login(req.body);
+
     // Responder con los datos si todo fue exitoso
     res.status(200).json(data);
   } catch (error) {

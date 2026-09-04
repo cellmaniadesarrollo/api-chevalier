@@ -3,8 +3,8 @@ const { GoogleAuth } = require('google-auth-library');
 const { RecaptchaEnterpriseServiceClient } = require('@google-cloud/recaptcha-enterprise');
 const fs = require('fs');
 const path = require('path');
-const jwt = require('jsonwebtoken'); 
-const User= require("../db/users")
+const jwt = require('jsonwebtoken');
+const User = require("../db/users")
 
 
 // Middleware para verificar el token de reCAPTCHA
@@ -29,7 +29,7 @@ permissions.recaptchaToken = async (req, res, next) => {
 
 
     // Verificar si el archivo JSON existe, si no, cambiar a la ruta alternativa
-    if (!fs.existsSync(keyFilePath)) { 
+    if (!fs.existsSync(keyFilePath)) {
       keyFilePath = fallbackKeyFilePath;
     }
 
@@ -59,7 +59,7 @@ permissions.recaptchaToken = async (req, res, next) => {
     const [response] = await client.createAssessment(request);
 
     // Verifica si el token es válido
-    if (!response.tokenProperties.valid) { 
+    if (!response.tokenProperties.valid) {
       return res.status(400).json({ message: 'Error en la validación de reCAPTCHA' });
     }
 
@@ -75,7 +75,7 @@ permissions.recaptchaToken = async (req, res, next) => {
         // Rechazar la solicitud porque parece ser un bot
         return res.status(400).json({ message: 'Parece ser un bot' });
       }
-    } else { 
+    } else {
       return res.status(400).json({ message: 'Error en la validación de reCAPTCHA' });
     }
   } catch (error) {
@@ -85,12 +85,12 @@ permissions.recaptchaToken = async (req, res, next) => {
 
 }
 
- // Middleware para verificar si el usuario está autenticado
- permissions.logged = async (req, res, next) => {
+// Middleware para verificar si el usuario está autenticado
+permissions.logged = async (req, res, next) => {
   // const token = req.headers.authorization;
-    // Obtener el token del header Authorization
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+  // Obtener el token del header Authorization
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
     return res.status(401).json({ message: 'Unauthorized: No token provided' });
@@ -98,21 +98,21 @@ permissions.recaptchaToken = async (req, res, next) => {
 
   try {
     // Verificar el token (por ejemplo, con JWT)
-    const decoded = jwt.verify(token, "process.env.JWT_SECRET");
-       // Buscar al usuario en la base de datos
-       const user = await User.findById(decoded.id).populate('roles'); // Llenar el campo 'roles'
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // Buscar al usuario en la base de datos
+    const user = await User.findById(decoded.id).populate('roles'); // Llenar el campo 'roles'
 
-       if (!user) {
-         return res.status(401).json({ message: 'Unauthorized: User not found' });
-       }
-   
-       // Verificar si el sessionId coincide
-       if (user.sessionId !== decoded.sessionId) {
-         return res.status(401).json({ message: 'Unauthorized: Invalid session' });
-       }
-   
-       // Guardar la información del usuario en la request para usarla en otros middlewares
-       req.user = user;
+    if (!user) {
+      return res.status(401).json({ message: 'Unauthorized: User not found' });
+    }
+
+    // Verificar si el sessionId coincide
+    if (user.sessionId !== decoded.sessionId) {
+      return res.status(401).json({ message: 'Unauthorized: Invalid session' });
+    }
+
+    // Guardar la información del usuario en la request para usarla en otros middlewares
+    req.user = user;
 
     next();  // El usuario está autenticado, pasar al siguiente middleware
   } catch (err) {
@@ -133,64 +133,64 @@ permissions.hasRole = (...roles) => {
     }
   };
 };
-  /**
-    * Crea una evaluación para analizar el riesgo de una acción de la IU.
-    *
-    * projectID: El ID del proyecto de Google Cloud.
-    * recaptchaSiteKey: La clave reCAPTCHA asociada con el sitio o la aplicación
-    * token: El token generado obtenido del cliente.
-    * recaptchaAction: El nombre de la acción que corresponde al token.
-    */
+/**
+  * Crea una evaluación para analizar el riesgo de una acción de la IU.
+  *
+  * projectID: El ID del proyecto de Google Cloud.
+  * recaptchaSiteKey: La clave reCAPTCHA asociada con el sitio o la aplicación
+  * token: El token generado obtenido del cliente.
+  * recaptchaAction: El nombre de la acción que corresponde al token.
+  */
 
-  async function createAssessment(tokens) {
-    const projectID = "chevalier-proyec-1727896169741";
-    const recaptchaKey = "6Le83VUqAAAAAAdwGCtIGFF5QTEc82FNsFYWIbKt";
-    const token = tokens;
-    const recaptchaAction = "action-name";
-  
-    // Autenticación manual usando el archivo JSON de credenciales
-    const auth = new GoogleAuth({
-      keyFilename: path.resolve('/home/teamcellmania/Descargas/chevalier-proyec-1727896169741-1e030ca111c3.json')
-    });
-  
-    // Crea el cliente de reCAPTCHA.
-    const client = new RecaptchaEnterpriseServiceClient({
-      auth: auth
-    });
-    
-    const projectPath = client.projectPath(projectID);
-  
-    // Crea la solicitud de evaluación.
-    const request = {
-      assessment: {
-        event: {
-          token: token,
-          siteKey: recaptchaKey,
-        },
+async function createAssessment(tokens) {
+  const projectID = "chevalier-proyec-1727896169741";
+  const recaptchaKey = "6Le83VUqAAAAAAdwGCtIGFF5QTEc82FNsFYWIbKt";
+  const token = tokens;
+  const recaptchaAction = "action-name";
+
+  // Autenticación manual usando el archivo JSON de credenciales
+  const auth = new GoogleAuth({
+    keyFilename: path.resolve('/home/teamcellmania/Descargas/chevalier-proyec-1727896169741-1e030ca111c3.json')
+  });
+
+  // Crea el cliente de reCAPTCHA.
+  const client = new RecaptchaEnterpriseServiceClient({
+    auth: auth
+  });
+
+  const projectPath = client.projectPath(projectID);
+
+  // Crea la solicitud de evaluación.
+  const request = {
+    assessment: {
+      event: {
+        token: token,
+        siteKey: recaptchaKey,
       },
-      parent: projectPath,
-    };
-  
-    const [response] = await client.createAssessment(request);
-  
-    // Verifica si el token es válido.
-    if (!response.tokenProperties.valid) {
-      console.log(`The CreateAssessment call failed because the token was: ${response.tokenProperties.invalidReason}`);
-      return null;
-    }
-  
-    // Verifica si se ejecutó la acción esperada.
-    if (response.tokenProperties.action === recaptchaAction) {
-      console.log(`The reCAPTCHA score is: ${response.riskAnalysis.score}`);
-      response.riskAnalysis.reasons.forEach((reason) => {
-        console.log(reason);
-      });
-  
-      return response.riskAnalysis.score;
-    } else {
-      console.log("The action attribute in your reCAPTCHA tag does not match the action you are expecting to score");
-      return null;
-    }
+    },
+    parent: projectPath,
+  };
+
+  const [response] = await client.createAssessment(request);
+
+  // Verifica si el token es válido.
+  if (!response.tokenProperties.valid) {
+    console.log(`The CreateAssessment call failed because the token was: ${response.tokenProperties.invalidReason}`);
+    return null;
   }
+
+  // Verifica si se ejecutó la acción esperada.
+  if (response.tokenProperties.action === recaptchaAction) {
+    console.log(`The reCAPTCHA score is: ${response.riskAnalysis.score}`);
+    response.riskAnalysis.reasons.forEach((reason) => {
+      console.log(reason);
+    });
+
+    return response.riskAnalysis.score;
+  } else {
+    console.log("The action attribute in your reCAPTCHA tag does not match the action you are expecting to score");
+    return null;
+  }
+}
 
 module.exports = permissions;

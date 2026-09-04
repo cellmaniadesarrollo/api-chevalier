@@ -3502,6 +3502,13 @@ async function resolveSessionForSale() {
     throw err;
   }
 
+  // 🔹 Si ya hubo una sesión cerrada HOY, las ventas restantes quedan huérfanas
+  //    (no se exige reabrir caja el mismo día en que ya se cerró)
+  const lastClosed = await CashSession.findOne({ status: 'closed' }).sort({ closingDate: -1 });
+  if (lastClosed && isSameDay(lastClosed.closingDate, local)) {
+    return { session: null, blocked: false };
+  }
+
   if (isWithinCashWindow(local)) {
     const err = new Error('Debe abrir una sesión de caja para registrar ventas en este horario.');
     err.code = 'CASH_SESSION_REQUIRED';
