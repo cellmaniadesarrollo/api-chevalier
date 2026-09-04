@@ -2986,6 +2986,7 @@ SalesModels.getWeeklySalesSummary = async () => {
     throw error;
   }
 }
+
 SalesModels.getDailyCashierReport = async () => {
   // Fecha actual ajustada a UTC-5
   const now = new Date(new Date().getTime() - 5 * 60 * 60 * 1000);
@@ -3041,7 +3042,7 @@ SalesModels.getDailyCashierReport = async () => {
     }
 
     for (const ps of sale.productsOrServices) {
-      const itemPrice = ps.item?.price ?? ps.price;
+      const itemPrice = ps.price ?? ps.item?.price; // 🔹 corregido: precio registrado en la venta, no el actual del catálogo
       const grossLine = itemPrice * ps.quantity;
 
       const discountInfo = ps.discount
@@ -3193,41 +3194,7 @@ async function getDailyBarberSaleNumber(barberId) {
   }
 };
 
-async function assignDefaultDailySaleNumber(defaultNumber = 0) {
-  try {
-    // Actualizar todas las ventas que no tienen `dailyBarberSaleNumber`
-    const result = await SalesModeldb.updateMany(
-      { dailyBarberSaleNumber: { $exists: false } },
-      { $set: { dailyBarberSaleNumber: defaultNumber } }
-    );
 
-    console.log(`Ventas actualizadas: ${result.nModified}`);
-  } catch (error) {
-    console.error("Error al asignar el número por defecto:", error);
-  }
-};
-
-async function savediscount100() {
-
-  try {
-    const discountData = {
-      name: "Descuento Fidelidad",
-      description: "100% de descuento por fidelidad al servicio",
-      discountType: "67192a98cbb3a91218017410", // ID del tipo de descuento
-      value: 100, // Descuento del 100%
-      isGlobal: false, // No es global, está dirigido a ciertos clientes
-      customers: ["67229ff2567dcb303acae3ee"], // ID del cliente que recibirá el descuento
-      productsOrServices: ["671693cfabafcf7a889a0fdd"], // ID del servicio específico al que aplica el descuento
-      validFrom: new Date(), // Fecha de inicio del descuento
-      validUntil: new Date("2999-12-31"), // Fecha muy lejana para simular un descuento "de por vida"
-    };
-
-    const createdDiscount = await DiscountModel.create(discountData);
-    console.log("Descuento creado con éxito:", createdDiscount);
-  } catch (error) {
-    console.error("Error al crear el descuento:", error);
-  }
-}
 const formatFecha = (fecha) => {
   const opciones = {
     weekday: 'short', // 'sáb'
@@ -3402,6 +3369,7 @@ function resolveDateRange(startDateStr, endDateStr) {
 }
 
 SalesModels.getMyCutsReport = async (barberId, startDateStr, endDateStr) => {
+
   const { start, end } = resolveDateRange(startDateStr, endDateStr);
 
   const sales = await SalesModeldb.find({
@@ -3432,7 +3400,7 @@ SalesModels.getMyCutsReport = async (barberId, startDateStr, endDateStr) => {
 
   for (const sale of sales) {
     for (const ps of sale.productsOrServices) {
-      const itemPrice = ps.item?.price ?? ps.price;
+      const itemPrice = ps.price ?? ps.item?.price; // 🔹 corregido: precio registrado en la venta, no el actual del catálogo
       const grossLine = itemPrice * ps.quantity;
 
       const discountInfo = ps.discount
