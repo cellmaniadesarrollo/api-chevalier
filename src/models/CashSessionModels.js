@@ -80,15 +80,21 @@ CashSessionModels.open = async (data, userId) => {
         throw err;
     }
 
-    // 🔹 nuevo: ya se abrió y cerró hoy → no se permite reabrir
+    // 🔹 corregido: solo cuenta como "ya cerrada hoy" si TAMBIÉN se abrió hoy (ciclo completo del día)
     const lastClosed = await CashSession.findOne({ status: 'closed' }).sort({ closingDate: -1 });
-    if (lastClosed && isSameDay(lastClosed.closingDate, local)) {
+    const wasOpenedAndClosedToday = !!(
+        lastClosed &&
+        isSameDay(lastClosed.openingDate, local) &&
+        isSameDay(lastClosed.closingDate, local)
+    );
+
+    if (wasOpenedAndClosedToday) {
         const err = new Error('La caja ya fue abierta y cerrada hoy. No es posible abrir otra sesión hasta el siguiente día.');
         err.code = 'CASH_SESSION_ALREADY_CLOSED_TODAY';
         throw err;
     }
 
-    // 🔹 nuevo: fuera del horario permitido
+    // 🔹 fuera del horario permitido
     if (!isWithinCashWindow(local)) {
         const err = new Error('Fuera del horario permitido para abrir caja (8:00 a 20:00).');
         err.code = 'CASH_SESSION_OUTSIDE_WINDOW';
@@ -100,7 +106,6 @@ CashSessionModels.open = async (data, userId) => {
         err.code = 'CASH_SESSION_INVALID_AMOUNT';
         throw err;
     }
-
 
     const { expectedOpeningAmount, orphanSales } = await calculateExpectedOpeningAmount();
 
@@ -136,7 +141,6 @@ CashSessionModels.getStatus = async () => {
                 .filter(s => s.paymentDetails?.paymentMethod?.toString() === cashMethodId.toString())
                 .reduce((sum, s) => sum + (s.paymentDetails?.amount || 0), 0);
 
-            // 🔹 movimientos manuales (entradas/salidas) de la sesión
             const movements = await getSessionMovementsTotal(openSession._id);
 
             const currentExpectedCash =
@@ -147,13 +151,19 @@ CashSessionModels.getStatus = async () => {
                 session: openSession,
                 currentExpectedCash,
                 salesCashTotal,
-                movements, // 🔹 { income, expense, net }
+                movements,
             };
         }
         return { hasActiveSession: false, needsToClosePending: true, pendingSession: openSession };
     }
+
+    // 🔹 corregido: mismo criterio que en open() — ciclo completo abierto Y cerrado hoy
     const lastClosed = await CashSession.findOne({ status: 'closed' }).sort({ closingDate: -1 });
-    const alreadyClosedToday = !!(lastClosed && isSameDay(lastClosed.closingDate, local));
+    const alreadyClosedToday = !!(
+        lastClosed &&
+        isSameDay(lastClosed.openingDate, local) &&
+        isSameDay(lastClosed.closingDate, local)
+    );
 
     return {
         hasActiveSession: false,
