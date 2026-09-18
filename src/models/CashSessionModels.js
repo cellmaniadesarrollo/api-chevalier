@@ -136,7 +136,10 @@ CashSessionModels.getStatus = async () => {
 
     if (openSession) {
         if (isSameDay(openSession.openingDate, local)) {
-            const sessionSales = await Sales.find({ cashSession: openSession._id }).populate('paymentDetails');
+            const sessionSales = await Sales.find({
+                cashSession: openSession._id,
+                createdAt: { $gte: openSession.openingDate } // 🔹 excluye ventas huérfanas reasignadas al abrir
+            }).populate('paymentDetails');
             const salesCashTotal = sessionSales
                 .filter(s => s.paymentDetails?.paymentMethod?.toString() === cashMethodId.toString())
                 .reduce((sum, s) => sum + (s.paymentDetails?.amount || 0), 0);
@@ -157,7 +160,6 @@ CashSessionModels.getStatus = async () => {
         return { hasActiveSession: false, needsToClosePending: true, pendingSession: openSession };
     }
 
-    // 🔹 corregido: mismo criterio que en open() — ciclo completo abierto Y cerrado hoy
     const lastClosed = await CashSession.findOne({ status: 'closed' }).sort({ closingDate: -1 });
     const alreadyClosedToday = !!(
         lastClosed &&
@@ -189,12 +191,14 @@ CashSessionModels.close = async (data, userId) => {
         throw err;
     }
 
-    const sessionSales = await Sales.find({ cashSession: openSession._id }).populate('paymentDetails');
+    const sessionSales = await Sales.find({
+        cashSession: openSession._id,
+        createdAt: { $gte: openSession.openingDate } // 🔹 mismo fix que en getStatus
+    }).populate('paymentDetails');
     const salesCashTotal = sessionSales
         .filter(s => s.paymentDetails?.paymentMethod?.toString() === cashMethodId.toString())
         .reduce((sum, s) => sum + (s.paymentDetails?.amount || 0), 0);
 
-    // 🔹 movimientos manuales (entradas/salidas) de la sesión
     const movements = await getSessionMovementsTotal(openSession._id);
 
     const expectedCashAmount =
@@ -222,7 +226,7 @@ CashSessionModels.close = async (data, userId) => {
     return {
         session: updated,
         deliveryMismatch,
-        movements, // 🔹 se devuelve para que el front pueda mostrar el detalle
+        movements,
     };
 };
 CashSessionModels.list = async (query) => {

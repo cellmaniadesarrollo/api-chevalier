@@ -17,7 +17,7 @@ CashSessionController.open = async (req, res) => {
 CashSessionController.status = async (req, res) => {
     try {
         const result = await CashSessionModels.getStatus();
-        // console.log(result)
+
         res.status(200).json(result);
     } catch (error) {
         res.status(500).json({ message: error.message });
